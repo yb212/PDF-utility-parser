@@ -6,7 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.6';
+  const APP_VERSION = 'v1.4.7';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -231,24 +231,28 @@ const PDFUtilityParser = () => {
     let detectedMode = utilityMode;
 
     if (utilityMode === 'auto') {
-      // Auto-detect based on content
-      const aceMatch = fullText.match(/ACE|Atlantic\s*City\s*Electric/i);
-      const psegMatch = fullText.match(/PSEG|Public\s*Service\s*Electric/i);
+      // Auto-detect based on content (using word boundaries to avoid false matches)
+      const aceMatch = fullText.match(/\bACE\b|Atlantic\s*City\s*Electric/i);
+      const psegMatch = fullText.match(/\bPSEG\b|Public\s*Service\s*Electric/i);
 
-      if (aceMatch) {
-        detectedMode = 'ace';
-        addLog(`Auto-detected: ACE utility bill (found: "${aceMatch[0]}")`);
-      } else if (psegMatch) {
+      if (psegMatch) {
         detectedMode = 'pseg';
         addLog(`Auto-detected: PSEG utility bill (found: "${psegMatch[0]}")`);
+      } else if (aceMatch) {
+        detectedMode = 'ace';
+        addLog(`Auto-detected: ACE utility bill (found: "${aceMatch[0]}")`);
       } else {
         addLog('Could not auto-detect utility type, trying both...');
         detectedMode = 'both';
       }
     }
 
+    // Try extraction based on detected mode
+    let extractionAttempted = false;
+
     // Try ACE extraction
     if (detectedMode === 'ace' || detectedMode === 'both') {
+      extractionAttempted = true;
       const aceData = extractACEData(fullText, pages);
       if (aceData.accountNumber || aceData.serviceAddress) {
         result = aceData;
@@ -258,8 +262,15 @@ const PDFUtilityParser = () => {
       }
     }
 
-    // Try PSEG extraction if ACE didn't work or if PSEG mode
-    if ((detectedMode === 'pseg' || detectedMode === 'both') && !result.accountNumber) {
+    // Try PSEG extraction if:
+    // 1. PSEG mode explicitly set, OR
+    // 2. Both mode (auto-detect failed), OR
+    // 3. Auto mode AND ACE extraction failed
+    if (
+      detectedMode === 'pseg' ||
+      detectedMode === 'both' ||
+      (utilityMode === 'auto' && extractionAttempted && !result.accountNumber)
+    ) {
       const psegData = extractPSEGData(fullText, pages);
       if (psegData.accountNumber || psegData.serviceAddress) {
         result = psegData;
@@ -333,6 +344,7 @@ const PDFUtilityParser = () => {
     setErrors([]);
     setDebugLogs([]);
 
+    addLog(`=== PDF Utility Parser ${APP_VERSION} ===`);
     addLog(`=== Starting batch processing of ${files.length} file(s) ===`);
 
     const extractedData = [];
