@@ -6,7 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.4';
+  const APP_VERSION = 'v1.4.5';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -99,6 +99,7 @@ const PDFUtilityParser = () => {
     // ---------- PAGE 1 (Address & Account) ----------
     if (pages.length > 0) {
       const page1Text = pages[0].text;
+      addLog(`Page 1 text preview (first 500 chars): ${page1Text.substring(0, 500)}...`);
 
       // Extract service address
       const addressMatch = page1Text.match(/Yourserviceaddress\s*:\s*(\S+)/i);
@@ -176,6 +177,7 @@ const PDFUtilityParser = () => {
 
     if (pages.length > 0) {
       const page1Text = pages[0].text;
+      addLog(`Page 1 text preview (first 500 chars): ${page1Text.substring(0, 500)}...`);
 
       // PSEG account number - look for patterns like "Account number 7300086802"
       const accountMatch = page1Text.match(/Account\s*number\s*[:\s]*(\d+)/i);
@@ -213,6 +215,9 @@ const PDFUtilityParser = () => {
   const extractFromPDF = async (file) => {
     const { fullText, pages, numPages } = await extractTextFromPDF(file);
 
+    // Debug: show sample of extracted text
+    addLog(`Full text preview (first 800 chars): ${fullText.substring(0, 800).replace(/\s+/g, ' ')}...`);
+
     let result = {
       serviceAddress: null,
       accountNumber: null,
@@ -225,12 +230,15 @@ const PDFUtilityParser = () => {
 
     if (utilityMode === 'auto') {
       // Auto-detect based on content
-      if (fullText.match(/ACE|Atlantic\s*City\s*Electric/i)) {
+      const aceMatch = fullText.match(/ACE|Atlantic\s*City\s*Electric/i);
+      const psegMatch = fullText.match(/PSEG|Public\s*Service\s*Electric/i);
+
+      if (aceMatch) {
         detectedMode = 'ace';
-        addLog('Auto-detected: ACE utility bill');
-      } else if (fullText.match(/PSEG|Public\s*Service\s*Electric/i)) {
+        addLog(`Auto-detected: ACE utility bill (found: "${aceMatch[0]}")`);
+      } else if (psegMatch) {
         detectedMode = 'pseg';
-        addLog('Auto-detected: PSEG utility bill');
+        addLog(`Auto-detected: PSEG utility bill (found: "${psegMatch[0]}")`);
       } else {
         addLog('Could not auto-detect utility type, trying both...');
         detectedMode = 'both';
@@ -243,6 +251,8 @@ const PDFUtilityParser = () => {
       if (aceData.accountNumber || aceData.serviceAddress) {
         result = aceData;
         addLog('✓ ACE extraction successful');
+      } else {
+        addLog('✗ ACE extraction found no data');
       }
     }
 
@@ -252,6 +262,8 @@ const PDFUtilityParser = () => {
       if (psegData.accountNumber || psegData.serviceAddress) {
         result = psegData;
         addLog('✓ PSEG extraction successful');
+      } else {
+        addLog('✗ PSEG extraction found no data');
       }
     }
 
