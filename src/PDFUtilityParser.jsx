@@ -6,6 +6,9 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
 
 const PDFUtilityParser = () => {
+  const APP_VERSION = 'v1.2.0';
+  const BUILD_DATE = '2025-12-19';
+
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -47,29 +50,49 @@ const PDFUtilityParser = () => {
   const extractTextFromPDF = async (file) => {
     addLog(`Starting PDF extraction for: ${file.name}`);
     try {
+      // Step 1: Read file
+      addLog(`Step 1: Reading file into ArrayBuffer...`);
       const arrayBuffer = await file.arrayBuffer();
-      addLog(`File loaded, size: ${arrayBuffer.byteLength} bytes`);
+      addLog(`✓ File loaded successfully - Size: ${arrayBuffer.byteLength} bytes`);
 
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      addLog(`PDF loaded successfully, ${pdf.numPages} pages found`);
+      // Step 2: Create loading task
+      addLog(`Step 2: Creating PDF loading task...`);
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      addLog(`✓ Loading task created`);
+
+      // Step 3: Load PDF document
+      addLog(`Step 3: Loading PDF document (this may take a moment)...`);
+      addLog(`Worker source: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
+
+      const pdf = await loadingTask.promise;
+      addLog(`✓ PDF document loaded! Pages: ${pdf.numPages}`);
 
       let fullText = '';
       const pages = [];
 
+      // Step 4: Extract text from each page
       for (let i = 1; i <= pdf.numPages; i++) {
-        addLog(`Extracting page ${i}/${pdf.numPages}...`);
+        addLog(`Step 4.${i}: Getting page ${i}/${pdf.numPages}...`);
         const page = await pdf.getPage(i);
+        addLog(`✓ Page ${i} retrieved`);
+
+        addLog(`Step 4.${i}b: Extracting text content from page ${i}...`);
         const textContent = await page.getTextContent();
+        addLog(`✓ Text content extracted - ${textContent.items.length} items`);
+
         const pageText = textContent.items.map(item => item.str).join(' ');
         pages.push({ text: pageText, items: textContent.items });
         fullText += pageText + '\n';
+        addLog(`✓ Page ${i} complete (${pageText.length} characters)`);
       }
 
-      addLog(`Extraction complete! Total text length: ${fullText.length} characters`);
+      addLog(`✓✓✓ EXTRACTION COMPLETE! Total: ${fullText.length} characters from ${pdf.numPages} pages`);
       return { fullText, pages, numPages: pdf.numPages };
     } catch (error) {
-      addLog(`ERROR: PDF extraction failed - ${error.message}`);
-      throw new Error(`Failed to extract PDF: ${error.message}`);
+      addLog(`❌ CRITICAL ERROR: ${error.name || 'Unknown'}`);
+      addLog(`❌ Error message: ${error.message}`);
+      addLog(`❌ Error stack: ${error.stack?.substring(0, 200) || 'No stack trace'}`);
+      throw new Error(`PDF extraction failed: ${error.message}`);
     }
   };
 
@@ -318,12 +341,24 @@ const PDFUtilityParser = () => {
         <div className="bg-white rounded-lg shadow-xl p-8">
           {/* Header */}
           <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">
-              Utility Bill PDF Parser
-            </h1>
-            <p className="text-gray-600">
-              Extract account data from ACE and PSEG utility bills and export to Excel
-            </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-4xl font-bold text-gray-800 mb-2">
+                  Utility Bill PDF Parser
+                </h1>
+                <p className="text-gray-600">
+                  Extract account data from ACE and PSEG utility bills and export to Excel
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-gray-500">
+                  {APP_VERSION}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {BUILD_DATE}
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Utility Mode Selector */}
