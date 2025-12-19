@@ -11,6 +11,7 @@ const PDFUtilityParser = () => {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
+  const [currentFile, setCurrentFile] = useState('');
 
   // Normalize address - fixes spacing issues like the Python version
   const normalizeAddress = (address) => {
@@ -35,21 +36,32 @@ const PDFUtilityParser = () => {
 
   // Extract text from PDF using PDF.js
   const extractTextFromPDF = async (file) => {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    console.log('Starting PDF extraction for:', file.name);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('File loaded, size:', arrayBuffer.byteLength, 'bytes');
 
-    let fullText = '';
-    const pages = [];
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      console.log('PDF loaded, pages:', pdf.numPages);
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map(item => item.str).join(' ');
-      pages.push({ text: pageText, items: textContent.items });
-      fullText += pageText + '\n';
+      let fullText = '';
+      const pages = [];
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        console.log(`Extracting page ${i}/${pdf.numPages}`);
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        pages.push({ text: pageText, items: textContent.items });
+        fullText += pageText + '\n';
+      }
+
+      console.log('Extraction complete, total text length:', fullText.length);
+      return { fullText, pages, numPages: pdf.numPages };
+    } catch (error) {
+      console.error('PDF extraction error:', error);
+      throw new Error(`Failed to extract PDF: ${error.message}`);
     }
-
-    return { fullText, pages, numPages: pdf.numPages };
   };
 
   // Extract data from a single PDF
@@ -160,6 +172,7 @@ const PDFUtilityParser = () => {
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
+        setCurrentFile(file.name);
         console.log(`Processing file: ${file.name}`);
         const data = await extractFromPDF(file);
         extractedData.push(data);
@@ -173,6 +186,7 @@ const PDFUtilityParser = () => {
     setResults(extractedData);
     setErrors(errorList);
     setProcessing(false);
+    setCurrentFile('');
   };
 
   // Export to Excel
@@ -244,6 +258,11 @@ const PDFUtilityParser = () => {
               <p className="text-center mt-2 text-sm text-gray-600">
                 {progress}% Complete
               </p>
+              {currentFile && (
+                <p className="text-center mt-1 text-xs text-gray-500">
+                  Processing: {currentFile}
+                </p>
+              )}
             </div>
           )}
 
