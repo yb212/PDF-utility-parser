@@ -6,7 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.5';
+  const APP_VERSION = 'v1.4.6';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -16,6 +16,8 @@ const PDFUtilityParser = () => {
   const [currentFile, setCurrentFile] = useState('');
   const [debugLogs, setDebugLogs] = useState([]);
   const [utilityMode, setUtilityMode] = useState('auto'); // 'auto', 'ace', 'pseg'
+  const [dragActive, setDragActive] = useState(false);
+  const [showDebugLogs, setShowDebugLogs] = useState(false);
 
   // Add debug log helper
   const addLog = (message) => {
@@ -279,10 +281,43 @@ const PDFUtilityParser = () => {
   // Handle file selection
   const handleFileChange = (e) => {
     const selectedFiles = Array.from(e.target.files);
-    setFiles(selectedFiles);
+    addFiles(selectedFiles);
+  };
+
+  // Add files to the list (used by both file input and drag & drop)
+  const addFiles = (newFiles) => {
+    const pdfFiles = newFiles.filter(file => file.type === 'application/pdf');
+    setFiles(prev => [...prev, ...pdfFiles]);
     setResults([]);
     setErrors([]);
     setProgress(0);
+  };
+
+  // Remove a file from the list
+  const removeFile = (index) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Drag and drop handlers
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files);
+      addFiles(droppedFiles);
+    }
   };
 
   // Process all PDFs
@@ -403,22 +438,100 @@ const PDFUtilityParser = () => {
             </p>
           </div>
 
-          {/* Upload Area */}
+          {/* Upload Area with Drag & Drop */}
           <div className="mb-8">
             <label className="block mb-2 text-sm font-medium text-gray-700">
               Select PDF Files
             </label>
-            <input
-              type="file"
-              accept=".pdf"
-              multiple
-              onChange={handleFileChange}
-              className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:border-blue-500 p-2.5"
-            />
+            <div
+              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                dragActive
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+              }`}
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+            >
+              <input
+                type="file"
+                accept=".pdf"
+                multiple
+                onChange={handleFileChange}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <div className="pointer-events-none">
+                <svg
+                  className="mx-auto h-12 w-12 text-gray-400"
+                  stroke="currentColor"
+                  fill="none"
+                  viewBox="0 0 48 48"
+                >
+                  <path
+                    d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+                <p className="mt-2 text-sm text-gray-600">
+                  <span className="font-semibold">Click to upload</span> or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">PDF files only</p>
+              </div>
+            </div>
+
+            {/* File List */}
             {files.length > 0 && (
-              <p className="mt-2 text-sm text-gray-600">
-                {files.length} file{files.length > 1 ? 's' : ''} selected
-              </p>
+              <div className="mt-4 space-y-2">
+                <p className="text-sm font-medium text-gray-700">
+                  Selected files ({files.length}):
+                </p>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {files.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-3 hover:bg-gray-50"
+                    >
+                      <div className="flex items-center space-x-3 flex-1 min-w-0">
+                        <svg
+                          className="h-8 w-8 text-red-500 flex-shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {file.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => removeFile(index)}
+                        className="ml-4 text-red-600 hover:text-red-800 flex-shrink-0"
+                        title="Remove file"
+                      >
+                        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
@@ -467,17 +580,41 @@ const PDFUtilityParser = () => {
             </div>
           )}
 
-          {/* Debug Logs - Visible on Mobile */}
+          {/* Debug Logs - Collapsible */}
           {debugLogs.length > 0 && (
-            <div className="mb-8 bg-gray-50 border border-gray-300 rounded-lg p-4">
-              <h3 className="text-gray-800 font-semibold mb-2">
-                Processing Log
-              </h3>
-              <div className="bg-black text-green-400 p-3 rounded font-mono text-xs max-h-96 overflow-y-auto">
-                {debugLogs.map((log, idx) => (
-                  <div key={idx} className="whitespace-pre-wrap">{log}</div>
-                ))}
-              </div>
+            <div className="mb-8 bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowDebugLogs(!showDebugLogs)}
+                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-100 transition-colors"
+              >
+                <h3 className="text-gray-800 font-semibold">
+                  Processing Log ({debugLogs.length} entries)
+                </h3>
+                <svg
+                  className={`h-5 w-5 text-gray-600 transition-transform ${
+                    showDebugLogs ? 'transform rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              {showDebugLogs && (
+                <div className="px-4 pb-4">
+                  <div className="bg-black text-green-400 p-3 rounded font-mono text-xs max-h-96 overflow-y-auto">
+                    {debugLogs.map((log, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap">{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
