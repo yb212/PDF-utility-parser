@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Standard PDF.js configuration for desktop browsers
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Use unpkg CDN which has better version availability
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.0';
+  const APP_VERSION = 'v1.4.1';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
@@ -340,9 +340,6 @@ const PDFUtilityParser = () => {
                 </h1>
                 <p className="text-gray-600">
                   Extract account data from ACE and PSEG utility bills and export to Excel
-                </p>
-                <p className="text-xs text-amber-600 mt-1">
-                  ⚠️ Desktop browser recommended for best performance
                 </p>
               </div>
               <div className="text-right">
