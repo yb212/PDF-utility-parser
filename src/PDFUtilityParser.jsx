@@ -12,6 +12,14 @@ const PDFUtilityParser = () => {
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
   const [currentFile, setCurrentFile] = useState('');
+  const [debugLogs, setDebugLogs] = useState([]);
+
+  // Add debug log helper
+  const addLog = (message) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
+    console.log(message);
+  };
 
   // Normalize address - fixes spacing issues like the Python version
   const normalizeAddress = (address) => {
@@ -36,19 +44,19 @@ const PDFUtilityParser = () => {
 
   // Extract text from PDF using PDF.js
   const extractTextFromPDF = async (file) => {
-    console.log('Starting PDF extraction for:', file.name);
+    addLog(`Starting PDF extraction for: ${file.name}`);
     try {
       const arrayBuffer = await file.arrayBuffer();
-      console.log('File loaded, size:', arrayBuffer.byteLength, 'bytes');
+      addLog(`File loaded, size: ${arrayBuffer.byteLength} bytes`);
 
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      console.log('PDF loaded, pages:', pdf.numPages);
+      addLog(`PDF loaded successfully, ${pdf.numPages} pages found`);
 
       let fullText = '';
       const pages = [];
 
       for (let i = 1; i <= pdf.numPages; i++) {
-        console.log(`Extracting page ${i}/${pdf.numPages}`);
+        addLog(`Extracting page ${i}/${pdf.numPages}...`);
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map(item => item.str).join(' ');
@@ -56,10 +64,10 @@ const PDFUtilityParser = () => {
         fullText += pageText + '\n';
       }
 
-      console.log('Extraction complete, total text length:', fullText.length);
+      addLog(`Extraction complete! Total text length: ${fullText.length} characters`);
       return { fullText, pages, numPages: pdf.numPages };
     } catch (error) {
-      console.error('PDF extraction error:', error);
+      addLog(`ERROR: PDF extraction failed - ${error.message}`);
       throw new Error(`Failed to extract PDF: ${error.message}`);
     }
   };
@@ -165,6 +173,9 @@ const PDFUtilityParser = () => {
     setProgress(0);
     setResults([]);
     setErrors([]);
+    setDebugLogs([]);
+
+    addLog(`=== Starting batch processing of ${files.length} file(s) ===`);
 
     const extractedData = [];
     const errorList = [];
@@ -173,12 +184,13 @@ const PDFUtilityParser = () => {
       const file = files[i];
       try {
         setCurrentFile(file.name);
-        console.log(`Processing file: ${file.name}`);
+        addLog(`\n--- Processing file ${i + 1}/${files.length}: ${file.name} ---`);
         const data = await extractFromPDF(file);
         extractedData.push(data);
+        addLog(`✓ Successfully processed ${file.name}`);
         setProgress(Math.round(((i + 1) / files.length) * 100));
       } catch (error) {
-        console.error(`Error processing ${file.name}:`, error);
+        addLog(`✗ ERROR processing ${file.name}: ${error.message}`);
         errorList.push({ fileName: file.name, error: error.message });
       }
     }
@@ -187,6 +199,7 @@ const PDFUtilityParser = () => {
     setErrors(errorList);
     setProcessing(false);
     setCurrentFile('');
+    addLog(`\n=== Processing complete! Extracted ${extractedData.length} files successfully ===`);
   };
 
   // Export to Excel
@@ -277,6 +290,20 @@ const PDFUtilityParser = () => {
                   ❌ {err.fileName}: {err.error}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Debug Logs - Visible on Mobile */}
+          {debugLogs.length > 0 && (
+            <div className="mb-8 bg-gray-50 border border-gray-300 rounded-lg p-4">
+              <h3 className="text-gray-800 font-semibold mb-2">
+                Processing Log
+              </h3>
+              <div className="bg-black text-green-400 p-3 rounded font-mono text-xs max-h-96 overflow-y-auto">
+                {debugLogs.map((log, idx) => (
+                  <div key={idx} className="whitespace-pre-wrap">{log}</div>
+                ))}
+              </div>
             </div>
           )}
 
