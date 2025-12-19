@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 
-// Legacy build doesn't require web workers - better for mobile!
-// No worker configuration needed
+// Configure worker for legacy build - using unpkg CDN
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.js';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.3.0';
+  const APP_VERSION = 'v1.3.1';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
