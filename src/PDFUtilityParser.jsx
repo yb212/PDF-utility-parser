@@ -13,6 +13,7 @@ const PDFUtilityParser = () => {
   const [errors, setErrors] = useState([]);
   const [currentFile, setCurrentFile] = useState('');
   const [debugLogs, setDebugLogs] = useState([]);
+  const [utilityMode, setUtilityMode] = useState('auto'); // 'auto', 'ace', 'pseg'
 
   // Add debug log helper
   const addLog = (message) => {
@@ -72,14 +73,14 @@ const PDFUtilityParser = () => {
     }
   };
 
-  // Extract data from a single PDF
-  const extractFromPDF = async (file) => {
-    const { fullText, pages, numPages } = await extractTextFromPDF(file);
-
+  // Extract data from ACE utility bill
+  const extractACEData = (fullText, pages) => {
     let serviceAddress = null;
     let accountNumber = null;
     let totalUse = null;
     let electricSupplyCharges = null;
+
+    addLog('Trying ACE extraction patterns...');
 
     // ---------- PAGE 1 (Address & Account) ----------
     if (pages.length > 0) {
@@ -89,12 +90,14 @@ const PDFUtilityParser = () => {
       const addressMatch = page1Text.match(/Yourserviceaddress\s*:\s*(\S+)/i);
       if (addressMatch) {
         serviceAddress = normalizeAddress(addressMatch[1]);
+        addLog(`Found ACE service address: ${serviceAddress}`);
       }
 
       // Extract account number
       const accountMatch = page1Text.match(/Accountnumber\s*:\s*(\d+)/i);
       if (accountMatch) {
         accountNumber = accountMatch[1];
+        addLog(`Found ACE account number: ${accountNumber}`);
       }
     }
 
@@ -119,12 +122,12 @@ const PDFUtilityParser = () => {
         });
 
         if (candidates.length > 0) {
-          // Get the closest one below
           const closest = candidates.reduce((prev, curr) => {
             if (!prev.transform || !curr.transform) return prev;
             return curr.transform[5] > prev.transform[5] ? curr : prev;
           });
           totalUse = closest.str.replace(/,/g, '');
+          addLog(`Found ACE total use: ${totalUse}`);
         }
       }
     }
@@ -141,14 +144,108 @@ const PDFUtilityParser = () => {
       const priceMatch = afterLabel.match(/[\$]?\s*([\d,]+\.\d{2})/);
       if (priceMatch) {
         electricSupplyCharges = priceMatch[1].replace(/,/g, '');
+        addLog(`Found ACE electric charges: $${electricSupplyCharges}`);
+      }
+    }
+
+    return { serviceAddress, accountNumber, totalUse, electricSupplyCharges };
+  };
+
+  // Extract data from PSEG utility bill
+  const extractPSEGData = (fullText, pages) => {
+    let serviceAddress = null;
+    let accountNumber = null;
+    let totalUse = null;
+    let electricSupplyCharges = null;
+
+    addLog('Trying PSEG extraction patterns...');
+
+    if (pages.length > 0) {
+      const page1Text = pages[0].text;
+
+      // PSEG account number - look for patterns like "Account number 7300086802"
+      const accountMatch = page1Text.match(/Account\s*number\s*[:\s]*(\d+)/i);
+      if (accountMatch) {
+        accountNumber = accountMatch[1];
+        addLog(`Found PSEG account number: ${accountNumber}`);
+      }
+
+      // PSEG service address - various patterns
+      const addressMatch = page1Text.match(/Service\s*(?:address|location)\s*[:\s]*(.+?)(?:\n|Account|$)/i);
+      if (addressMatch) {
+        serviceAddress = normalizeAddress(addressMatch[1].trim());
+        addLog(`Found PSEG service address: ${serviceAddress}`);
+      }
+    }
+
+    // PSEG usage patterns - look for kWh
+    const usageMatch = fullText.match(/(\d+)\s*kWh/i) || fullText.match(/Total\s*(?:usage|use)\s*[:\s]*(\d+)/i);
+    if (usageMatch) {
+      totalUse = usageMatch[1].replace(/,/g, '');
+      addLog(`Found PSEG total use: ${totalUse} kWh`);
+    }
+
+    // PSEG charges - look for various charge patterns
+    const chargesMatch = fullText.match(/(?:Total\s*(?:amount|charges|due)|Amount\s*due)\s*[:\$\s]*([\d,]+\.\d{2})/i);
+    if (chargesMatch) {
+      electricSupplyCharges = chargesMatch[1].replace(/,/g, '');
+      addLog(`Found PSEG charges: $${electricSupplyCharges}`);
+    }
+
+    return { serviceAddress, accountNumber, totalUse, electricSupplyCharges };
+  };
+
+  // Extract data from a single PDF
+  const extractFromPDF = async (file) => {
+    const { fullText, pages, numPages } = await extractTextFromPDF(file);
+
+    let result = {
+      serviceAddress: null,
+      accountNumber: null,
+      totalUse: null,
+      electricSupplyCharges: null
+    };
+
+    // Determine which extraction method to use
+    let detectedMode = utilityMode;
+
+    if (utilityMode === 'auto') {
+      // Auto-detect based on content
+      if (fullText.match(/ACE|Atlantic\s*City\s*Electric/i)) {
+        detectedMode = 'ace';
+        addLog('Auto-detected: ACE utility bill');
+      } else if (fullText.match(/PSEG|Public\s*Service\s*Electric/i)) {
+        detectedMode = 'pseg';
+        addLog('Auto-detected: PSEG utility bill');
+      } else {
+        addLog('Could not auto-detect utility type, trying both...');
+        detectedMode = 'both';
+      }
+    }
+
+    // Try ACE extraction
+    if (detectedMode === 'ace' || detectedMode === 'both') {
+      const aceData = extractACEData(fullText, pages);
+      if (aceData.accountNumber || aceData.serviceAddress) {
+        result = aceData;
+        addLog('✓ ACE extraction successful');
+      }
+    }
+
+    // Try PSEG extraction if ACE didn't work or if PSEG mode
+    if ((detectedMode === 'pseg' || detectedMode === 'both') && !result.accountNumber) {
+      const psegData = extractPSEGData(fullText, pages);
+      if (psegData.accountNumber || psegData.serviceAddress) {
+        result = psegData;
+        addLog('✓ PSEG extraction successful');
       }
     }
 
     return {
-      'Service Address': serviceAddress,
-      'Account Number': accountNumber,
-      'Total Use': totalUse,
-      'Total Electric Supply Charges': electricSupplyCharges,
+      'Service Address': result.serviceAddress,
+      'Account Number': result.accountNumber,
+      'Total Use': result.totalUse,
+      'Total Electric Supply Charges': result.electricSupplyCharges,
       'File Name': file.name
     };
   };
@@ -222,10 +319,52 @@ const PDFUtilityParser = () => {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-800 mb-2">
-              ACE Utility PDF Parser
+              Utility Bill PDF Parser
             </h1>
             <p className="text-gray-600">
-              Extract account data from multiple ACE utility bills and export to Excel
+              Extract account data from ACE and PSEG utility bills and export to Excel
+            </p>
+          </div>
+
+          {/* Utility Mode Selector */}
+          <div className="mb-8">
+            <label className="block mb-2 text-sm font-medium text-gray-700">
+              Utility Company
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="auto"
+                  checked={utilityMode === 'auto'}
+                  onChange={(e) => setUtilityMode(e.target.value)}
+                  className="mr-2"
+                />
+                <span className="text-sm">Auto-detect</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="ace"
+                  checked={utilityMode === 'ace'}
+                  onChange={(e) => setUtilityMode(e.target.value)}
+                  className="mr-2"
+                />
+                <span className="text-sm">ACE</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  value="pseg"
+                  checked={utilityMode === 'pseg'}
+                  onChange={(e) => setUtilityMode(e.target.value)}
+                  className="mr-2"
+                />
+                <span className="text-sm">PSEG</span>
+              </label>
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              Auto-detect will identify the utility type automatically
             </p>
           </div>
 
