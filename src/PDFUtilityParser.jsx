@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 
-// Configure worker for legacy build - using unpkg CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/legacy/build/pdf.worker.min.js';
+// DISABLE workers entirely for mobile compatibility
+pdfjsLib.GlobalWorkerOptions.workerSrc = false;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.3.1';
+  const APP_VERSION = 'v1.3.2';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
@@ -49,21 +49,26 @@ const PDFUtilityParser = () => {
   // Extract text from PDF using PDF.js (Legacy - no workers!)
   const extractTextFromPDF = async (file) => {
     addLog(`Starting PDF extraction for: ${file.name}`);
-    addLog(`Using PDF.js Legacy build (mobile-optimized, no workers)`);
+    addLog(`Using PDF.js Legacy build - Workers DISABLED for mobile`);
     try {
       // Step 1: Read file
       addLog(`Step 1: Reading file into ArrayBuffer...`);
       const arrayBuffer = await file.arrayBuffer();
       addLog(`✓ File loaded - Size: ${arrayBuffer.byteLength} bytes`);
 
-      // Step 2 & 3: Load PDF document (legacy build, no worker needed!)
-      addLog(`Step 2: Loading PDF document...`);
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      // Step 2 & 3: Load PDF document (NO WORKER - main thread only!)
+      addLog(`Step 2: Loading PDF in main thread (slow but reliable)...`);
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        disableWorker: true,
+        disableStream: true,
+        disableAutoFetch: true
+      });
 
       const pdf = await Promise.race([
         loadingTask.promise,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout after 30s')), 30000)
+          setTimeout(() => reject(new Error('Timeout after 60s - PDF too large or browser limitation')), 60000)
         )
       ]);
       addLog(`✓ PDF loaded! ${pdf.numPages} pages found`);
