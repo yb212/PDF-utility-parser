@@ -2,15 +2,11 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Use Vite's new URL constructor to bundle the worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.js',
-  import.meta.url
-).href;
+// Use static path to bundled worker file from public directory
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.3';
-  const BUILD_DATE = '2025-12-19';
+  const APP_VERSION = 'v1.4.4';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -348,9 +344,6 @@ const PDFUtilityParser = () => {
               <div className="text-right">
                 <div className="text-xs text-gray-500">
                   {APP_VERSION}
-                </div>
-                <div className="text-xs text-gray-400">
-                  {BUILD_DATE}
                 </div>
               </div>
             </div>
