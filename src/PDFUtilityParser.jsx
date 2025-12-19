@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import * as pdfjsLib from 'pdfjs-dist';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
 
-// Use unpkg CDN for PDF.js worker (better mobile support)
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.js';
+// Legacy build doesn't require web workers - better for mobile!
+// No worker configuration needed
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.2.0';
+  const APP_VERSION = 'v1.3.0';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
@@ -46,56 +46,46 @@ const PDFUtilityParser = () => {
     return address;
   };
 
-  // Extract text from PDF using PDF.js
+  // Extract text from PDF using PDF.js (Legacy - no workers!)
   const extractTextFromPDF = async (file) => {
     addLog(`Starting PDF extraction for: ${file.name}`);
+    addLog(`Using PDF.js Legacy build (mobile-optimized, no workers)`);
     try {
       // Step 1: Read file
       addLog(`Step 1: Reading file into ArrayBuffer...`);
       const arrayBuffer = await file.arrayBuffer();
-      addLog(`✓ File loaded successfully - Size: ${arrayBuffer.byteLength} bytes`);
+      addLog(`✓ File loaded - Size: ${arrayBuffer.byteLength} bytes`);
 
-      // Step 2: Create loading task (disable worker for mobile compatibility)
-      addLog(`Step 2: Creating PDF loading task (mobile-compatible mode)...`);
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        useWorkerFetch: false,
-        isEvalSupported: false,
-        useSystemFonts: true
-      });
-      addLog(`✓ Loading task created`);
-
-      // Step 3: Load PDF document
-      addLog(`Step 3: Loading PDF document (this may take a moment)...`);
+      // Step 2 & 3: Load PDF document (legacy build, no worker needed!)
+      addLog(`Step 2: Loading PDF document...`);
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
 
       const pdf = await Promise.race([
         loadingTask.promise,
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('PDF loading timeout after 30s')), 30000)
+          setTimeout(() => reject(new Error('Timeout after 30s')), 30000)
         )
       ]);
-      addLog(`✓ PDF document loaded! Pages: ${pdf.numPages}`);
+      addLog(`✓ PDF loaded! ${pdf.numPages} pages found`);
 
       let fullText = '';
       const pages = [];
 
-      // Step 4: Extract text from each page
+      // Step 3: Extract text from each page
+      addLog(`Step 3: Extracting text from ${pdf.numPages} pages...`);
       for (let i = 1; i <= pdf.numPages; i++) {
-        addLog(`Step 4.${i}: Getting page ${i}/${pdf.numPages}...`);
         const page = await pdf.getPage(i);
-        addLog(`✓ Page ${i} retrieved`);
-
-        addLog(`Step 4.${i}b: Extracting text content from page ${i}...`);
         const textContent = await page.getTextContent();
-        addLog(`✓ Text content extracted - ${textContent.items.length} items`);
-
         const pageText = textContent.items.map(item => item.str).join(' ');
         pages.push({ text: pageText, items: textContent.items });
         fullText += pageText + '\n';
-        addLog(`✓ Page ${i} complete (${pageText.length} characters)`);
+
+        if (i === 1 || i === pdf.numPages) {
+          addLog(`✓ Page ${i}/${pdf.numPages} done (${textContent.items.length} items, ${pageText.length} chars)`);
+        }
       }
 
-      addLog(`✓✓✓ EXTRACTION COMPLETE! Total: ${fullText.length} characters from ${pdf.numPages} pages`);
+      addLog(`✓✓✓ SUCCESS! Extracted ${fullText.length} characters total`);
       return { fullText, pages, numPages: pdf.numPages };
     } catch (error) {
       addLog(`❌ CRITICAL ERROR: ${error.name || 'Unknown'}`);
