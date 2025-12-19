@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
-// Use locally bundled worker to avoid CORS issues
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+// Use Vite's new URL constructor to bundle the worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.js',
+  import.meta.url
+).href;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.2';
+  const APP_VERSION = 'v1.4.3';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
