@@ -162,10 +162,14 @@ The app uses Tailwind CSS. Modify classes in `src/PDFUtilityParser.jsx` or exten
 
 ## Browser Compatibility
 
+**Desktop (Recommended):**
 - Chrome/Edge: ✅ Full support
 - Firefox: ✅ Full support
 - Safari: ✅ Full support
-- Mobile browsers: ✅ Full support
+
+**Mobile:**
+- ⚠️ Limited support due to PDF.js web worker restrictions
+- For best results, use a desktop browser
 
 ## Known Limitations
 
