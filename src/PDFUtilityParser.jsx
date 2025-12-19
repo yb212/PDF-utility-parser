@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 
-// Use unpkg CDN which has better version availability
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+// Use locally bundled worker to avoid CORS issues
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.1';
+  const APP_VERSION = 'v1.4.2';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
