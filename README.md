@@ -1,17 +1,20 @@
-# ACE Utility PDF Parser
+# Utility Bill PDF Parser
 
-A web-based application that extracts data from ACE utility PDF bills and exports the results to Excel. Built with React, Vite, PDF.js, and Tailwind CSS.
+A web-based application that extracts data from ACE and PSEG utility PDF bills and exports the results to Excel. Built with React, Vite, PDF.js, and Tailwind CSS.
 
 ## Features
 
+- **Multi-Utility Support**: Works with both ACE and PSEG utility bills
+- **Auto-Detection**: Automatically identifies the utility company from PDF content
 - **Batch PDF Processing**: Upload and process multiple PDF files at once
-- **Automatic Data Extraction**: Extracts key information from ACE utility bills:
+- **Automatic Data Extraction**: Extracts key information from utility bills:
   - Account Number
   - Service Address
   - Total Use (kWh)
   - Total Electric Supply Charges
 - **Address Normalization**: Automatically fixes spacing issues in extracted addresses
 - **Progress Tracking**: Real-time progress bar showing processing status
+- **Debug Logging**: Visible processing logs for troubleshooting (mobile-friendly)
 - **Error Handling**: Continues processing even if individual files fail, with detailed error reporting
 - **Excel Export**: Export all extracted data to a formatted Excel spreadsheet
 - **Modern UI**: Clean, responsive interface built with Tailwind CSS
@@ -57,10 +60,11 @@ npm run dev
 
 ## Usage
 
-1. **Select PDFs**: Click "Select PDF Files" and choose one or more ACE utility bill PDFs
-2. **Process**: Click "Process PDFs" to extract data from all selected files
-3. **Review**: View the extracted data in the results table
-4. **Export**: Click "Export to Excel" to download the data as an Excel file
+1. **Select Utility Type**: Choose Auto-detect (recommended), ACE, or PSEG
+2. **Select PDFs**: Click "Select PDF Files" and choose one or more utility bill PDFs
+3. **Process**: Click "Process PDFs" to extract data from all selected files
+4. **Review**: View the extracted data in the results table and check the processing log
+5. **Export**: Click "Export to Excel" to download the data as an Excel file
 
 ## Building for Production
 
@@ -76,7 +80,7 @@ The built files will be in the `dist` directory.
 
 This project is configured for automatic deployment to GitHub Pages:
 
-1. Push to the `main` branch
+1. Push to the `master` branch
 2. GitHub Actions will automatically build and deploy the site
 3. Enable GitHub Pages in repository settings (Settings > Pages > Source: GitHub Actions)
 
@@ -112,39 +116,45 @@ PDF-utility-parser/
 
 1. **PDF Loading**: Uses PDF.js to load and parse PDF files
 2. **Text Extraction**: Extracts text content from each page
-3. **Pattern Matching**: Uses regex patterns to find:
-   - `Yourserviceaddress : [address]` - Service address
-   - `Accountnumber : [digits]` - Account number
-   - Word "use" followed by numbers - Total usage
-   - "Total Electric Supply Charges" followed by price - Charges
-4. **Address Normalization**: Fixes spacing issues in addresses
-5. **Excel Generation**: Converts extracted data to Excel using XLSX library
+3. **Utility Detection**: Auto-detects whether the bill is from ACE or PSEG
+4. **Pattern Matching**: Applies appropriate regex patterns based on utility type
+5. **Address Normalization**: Fixes spacing issues in addresses
+6. **Excel Generation**: Converts extracted data to Excel using XLSX library
+7. **Debug Logging**: All extraction steps are logged for troubleshooting
 
 ### Extraction Patterns
 
-The parser looks for these specific patterns in ACE utility PDFs:
-
+#### ACE Utility Bills
 - **Service Address**: `Yourserviceaddress : <address>`
 - **Account Number**: `Accountnumber : <digits>`
 - **Total Use**: Finds "use" text and extracts numbers positioned below it
 - **Electric Supply Charges**: Finds "Total Electric Supply Charges" and extracts the following dollar amount
 
+#### PSEG Utility Bills
+- **Account Number**: `Account number <digits>`
+- **Service Address**: `Service address/location : <address>`
+- **Total Use**: Finds `<number> kWh` pattern
+- **Total Charges**: Finds "Total amount due" or "Amount due" followed by dollar amount
+
+The parser will automatically try both patterns if the utility type cannot be detected.
+
 ## Customization
 
 ### Modifying Extraction Patterns
 
-To adjust extraction patterns for different PDF formats, edit the regex patterns in `src/PDFUtilityParser.jsx`:
+To adjust extraction patterns for different PDF formats, edit the `extractACEData` or `extractPSEGData` functions in `src/PDFUtilityParser.jsx`:
 
 ```javascript
-// Service address pattern
+// ACE patterns
 const addressMatch = page1Text.match(/Yourserviceaddress\s*:\s*(\S+)/i);
-
-// Account number pattern
 const accountMatch = page1Text.match(/Accountnumber\s*:\s*(\d+)/i);
 
-// Charges pattern
-const labelRegex = /Total\s*Electric\s*Supply\s*Charges/i;
+// PSEG patterns
+const accountMatch = page1Text.match(/Account\s*number\s*[:\s]*(\d+)/i);
+const usageMatch = fullText.match(/(\d+)\s*kWh/i);
 ```
+
+To add support for a new utility company, create a new extraction function similar to `extractACEData` or `extractPSEGData`.
 
 ### Styling
 
@@ -159,9 +169,11 @@ The app uses Tailwind CSS. Modify classes in `src/PDFUtilityParser.jsx` or exten
 
 ## Known Limitations
 
-- Requires PDFs to follow ACE utility bill format
-- Coordinate-based extraction for "Total Use" may need adjustment for different PDF layouts
+- Currently supports ACE and PSEG utility bill formats only
+- Coordinate-based extraction for ACE "Total Use" may need adjustment for different PDF layouts
+- Auto-detection relies on utility company name appearing in the PDF
 - Large batch processing (100+ files) may be slow in browser
+- Requires stable internet connection to load PDF.js worker from CDN
 
 ## Contributing
 
