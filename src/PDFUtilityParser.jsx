@@ -6,8 +6,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.1.0';
-  const BUILD_DATE = '2025-01-19';
+  const APP_VERSION = 'v1.2.0';
+  const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
