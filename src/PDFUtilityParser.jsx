@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+import * as pdfjsLib from 'pdfjs-dist';
 
-// DISABLE workers entirely for mobile compatibility
-pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+// Standard PDF.js configuration for desktop browsers
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.3.2';
+  const APP_VERSION = 'v1.4.0';
   const BUILD_DATE = '2025-12-19';
 
   const [files, setFiles] = useState([]);
@@ -46,31 +46,19 @@ const PDFUtilityParser = () => {
     return address;
   };
 
-  // Extract text from PDF using PDF.js (Legacy - no workers!)
+  // Extract text from PDF using PDF.js
   const extractTextFromPDF = async (file) => {
     addLog(`Starting PDF extraction for: ${file.name}`);
-    addLog(`Using PDF.js Legacy build - Workers DISABLED for mobile`);
     try {
       // Step 1: Read file
       addLog(`Step 1: Reading file into ArrayBuffer...`);
       const arrayBuffer = await file.arrayBuffer();
       addLog(`✓ File loaded - Size: ${arrayBuffer.byteLength} bytes`);
 
-      // Step 2 & 3: Load PDF document (NO WORKER - main thread only!)
-      addLog(`Step 2: Loading PDF in main thread (slow but reliable)...`);
-      const loadingTask = pdfjsLib.getDocument({
-        data: arrayBuffer,
-        disableWorker: true,
-        disableStream: true,
-        disableAutoFetch: true
-      });
-
-      const pdf = await Promise.race([
-        loadingTask.promise,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout after 60s - PDF too large or browser limitation')), 60000)
-        )
-      ]);
+      // Step 2: Load PDF document
+      addLog(`Step 2: Loading PDF document...`);
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
       addLog(`✓ PDF loaded! ${pdf.numPages} pages found`);
 
       let fullText = '';
@@ -352,6 +340,9 @@ const PDFUtilityParser = () => {
                 </h1>
                 <p className="text-gray-600">
                   Extract account data from ACE and PSEG utility bills and export to Excel
+                </p>
+                <p className="text-xs text-amber-600 mt-1">
+                  ⚠️ Desktop browser recommended for best performance
                 </p>
               </div>
               <div className="text-right">
