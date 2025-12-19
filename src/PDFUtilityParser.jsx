@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js worker - use https for better compatibility
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`;
+// Use unpkg CDN for PDF.js worker (better mobile support)
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.0.379/build/pdf.worker.min.js';
 
 const PDFUtilityParser = () => {
   const APP_VERSION = 'v1.2.0';
@@ -55,16 +55,25 @@ const PDFUtilityParser = () => {
       const arrayBuffer = await file.arrayBuffer();
       addLog(`✓ File loaded successfully - Size: ${arrayBuffer.byteLength} bytes`);
 
-      // Step 2: Create loading task
-      addLog(`Step 2: Creating PDF loading task...`);
-      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+      // Step 2: Create loading task (disable worker for mobile compatibility)
+      addLog(`Step 2: Creating PDF loading task (mobile-compatible mode)...`);
+      const loadingTask = pdfjsLib.getDocument({
+        data: arrayBuffer,
+        useWorkerFetch: false,
+        isEvalSupported: false,
+        useSystemFonts: true
+      });
       addLog(`✓ Loading task created`);
 
       // Step 3: Load PDF document
       addLog(`Step 3: Loading PDF document (this may take a moment)...`);
-      addLog(`Worker source: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`);
 
-      const pdf = await loadingTask.promise;
+      const pdf = await Promise.race([
+        loadingTask.promise,
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('PDF loading timeout after 30s')), 30000)
+        )
+      ]);
       addLog(`✓ PDF document loaded! Pages: ${pdf.numPages}`);
 
       let fullText = '';
