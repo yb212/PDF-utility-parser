@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
+import { PROVIDERS, detectProvider } from './providers';
+import { normalizeAddress } from './utils/addressUtils';
+import { exportToExcel, exportGasOnly, exportElectricOnly } from './utils/excelExport';
 
 // Use static path to bundled worker file from public directory
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.4.7';
+  const APP_VERSION = 'v1.6.2';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -18,6 +20,21 @@ const PDFUtilityParser = () => {
   const [utilityMode, setUtilityMode] = useState('auto'); // 'auto', 'ace', 'pseg'
   const [dragActive, setDragActive] = useState(false);
   const [showDebugLogs, setShowDebugLogs] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    // Check localStorage or system preference
+    const saved = localStorage.getItem('darkMode');
+    if (saved !== null) return JSON.parse(saved);
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  // Toggle dark mode
+  const toggleDarkMode = () => {
+    setDarkMode(prev => {
+      const newMode = !prev;
+      localStorage.setItem('darkMode', JSON.stringify(newMode));
+      return newMode;
+    });
+  };
 
   // Add debug log helper
   const addLog = (message) => {
@@ -26,266 +43,89 @@ const PDFUtilityParser = () => {
     console.log(message);
   };
 
-  // Normalize address - fixes spacing issues like the Python version
-  const normalizeAddress = (address) => {
-    if (!address) return null;
-
-    // Add space between digit and letter
-    address = address.replace(/(\d)([A-Za-z])/g, '$1 $2');
-    // Add space between letter and digit
-    address = address.replace(/([A-Za-z])(\d)/g, '$1 $2');
-    // Add space after direction indicators
-    address = address.replace(/\b([NSEW])([A-Z])/g, '$1 $2');
-    // Add space before common street suffixes
-    address = address.replace(
-      /(AVE|ST|RD|DR|LN|BLVD|CT|CIR|PL|WAY|HWY)\b/gi,
-      ' $1'
-    );
-    // Normalize whitespace
-    address = address.replace(/\s+/g, ' ').trim();
-
-    return address;
-  };
-
   // Extract text from PDF using PDF.js
   const extractTextFromPDF = async (file) => {
-    addLog(`Starting PDF extraction for: ${file.name}`);
+    addLog(`Processing: ${file.name}`);
     try {
-      // Step 1: Read file
-      addLog(`Step 1: Reading file into ArrayBuffer...`);
       const arrayBuffer = await file.arrayBuffer();
-      addLog(`✓ File loaded - Size: ${arrayBuffer.byteLength} bytes`);
-
-      // Step 2: Load PDF document
-      addLog(`Step 2: Loading PDF document...`);
       const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
       const pdf = await loadingTask.promise;
-      addLog(`✓ PDF loaded! ${pdf.numPages} pages found`);
+      addLog(`  Loaded ${pdf.numPages} pages`);
 
       let fullText = '';
       const pages = [];
 
-      // Step 3: Extract text from each page
-      addLog(`Step 3: Extracting text from ${pdf.numPages} pages...`);
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map(item => item.str).join(' ');
         pages.push({ text: pageText, items: textContent.items });
         fullText += pageText + '\n';
-
-        if (i === 1 || i === pdf.numPages) {
-          addLog(`✓ Page ${i}/${pdf.numPages} done (${textContent.items.length} items, ${pageText.length} chars)`);
-        }
       }
 
-      addLog(`✓✓✓ SUCCESS! Extracted ${fullText.length} characters total`);
       return { fullText, pages, numPages: pdf.numPages };
     } catch (error) {
-      addLog(`❌ CRITICAL ERROR: ${error.name || 'Unknown'}`);
-      addLog(`❌ Error message: ${error.message}`);
-      addLog(`❌ Error stack: ${error.stack?.substring(0, 200) || 'No stack trace'}`);
+      addLog(`  ❌ ERROR: ${error.message}`);
       throw new Error(`PDF extraction failed: ${error.message}`);
     }
-  };
-
-  // Extract data from ACE utility bill
-  const extractACEData = (fullText, pages) => {
-    let serviceAddress = null;
-    let accountNumber = null;
-    let totalUse = null;
-    let electricSupplyCharges = null;
-
-    addLog('Trying ACE extraction patterns...');
-
-    // ---------- PAGE 1 (Address & Account) ----------
-    if (pages.length > 0) {
-      const page1Text = pages[0].text;
-      addLog(`Page 1 text preview (first 500 chars): ${page1Text.substring(0, 500)}...`);
-
-      // Extract service address
-      const addressMatch = page1Text.match(/Yourserviceaddress\s*:\s*(\S+)/i);
-      if (addressMatch) {
-        serviceAddress = normalizeAddress(addressMatch[1]);
-        addLog(`Found ACE service address: ${serviceAddress}`);
-      }
-
-      // Extract account number
-      const accountMatch = page1Text.match(/Accountnumber\s*:\s*(\d+)/i);
-      if (accountMatch) {
-        accountNumber = accountMatch[1];
-        addLog(`Found ACE account number: ${accountNumber}`);
-      }
-    }
-
-    // ---------- PAGE 2 (Total Use) ----------
-    if (pages.length > 1) {
-      const page2Items = pages[1].items;
-
-      // Find the word "use"
-      const useItem = page2Items.find(item =>
-        item.str.trim().toLowerCase() === 'use'
-      );
-
-      if (useItem) {
-        // Find numbers below the "use" word
-        const candidates = page2Items.filter(item => {
-          const isNumber = /^[\d,]+$/.test(item.str);
-          const isBelow = item.transform && useItem.transform &&
-                         item.transform[5] < useItem.transform[5];
-          const isAligned = item.transform && useItem.transform &&
-                           Math.abs(item.transform[4] - useItem.transform[4]) < 10;
-          return isNumber && isBelow && isAligned;
-        });
-
-        if (candidates.length > 0) {
-          const closest = candidates.reduce((prev, curr) => {
-            if (!prev.transform || !curr.transform) return prev;
-            return curr.transform[5] > prev.transform[5] ? curr : prev;
-          });
-          totalUse = closest.str.replace(/,/g, '');
-          addLog(`Found ACE total use: ${totalUse}`);
-        }
-      }
-    }
-
-    // ---------- TOTAL ELECTRIC SUPPLY CHARGES ----------
-    const labelRegex = /Total\s*Electric\s*Supply\s*Charges/i;
-    const labelMatch = fullText.match(labelRegex);
-
-    if (labelMatch) {
-      const afterLabel = fullText.substring(
-        labelMatch.index + labelMatch[0].length,
-        labelMatch.index + labelMatch[0].length + 60
-      );
-      const priceMatch = afterLabel.match(/[\$]?\s*([\d,]+\.\d{2})/);
-      if (priceMatch) {
-        electricSupplyCharges = priceMatch[1].replace(/,/g, '');
-        addLog(`Found ACE electric charges: $${electricSupplyCharges}`);
-      }
-    }
-
-    return { serviceAddress, accountNumber, totalUse, electricSupplyCharges };
-  };
-
-  // Extract data from PSEG utility bill
-  const extractPSEGData = (fullText, pages) => {
-    let serviceAddress = null;
-    let accountNumber = null;
-    let totalUse = null;
-    let electricSupplyCharges = null;
-
-    addLog('Trying PSEG extraction patterns...');
-
-    if (pages.length > 0) {
-      const page1Text = pages[0].text;
-      addLog(`Page 1 text preview (first 500 chars): ${page1Text.substring(0, 500)}...`);
-
-      // PSEG account number - look for patterns like "Account number 7300086802"
-      const accountMatch = page1Text.match(/Account\s*number\s*[:\s]*(\d+)/i);
-      if (accountMatch) {
-        accountNumber = accountMatch[1];
-        addLog(`Found PSEG account number: ${accountNumber}`);
-      }
-
-      // PSEG service address - various patterns
-      const addressMatch = page1Text.match(/Service\s*(?:address|location)\s*[:\s]*(.+?)(?:\n|Account|$)/i);
-      if (addressMatch) {
-        serviceAddress = normalizeAddress(addressMatch[1].trim());
-        addLog(`Found PSEG service address: ${serviceAddress}`);
-      }
-    }
-
-    // PSEG usage patterns - look for kWh
-    const usageMatch = fullText.match(/(\d+)\s*kWh/i) || fullText.match(/Total\s*(?:usage|use)\s*[:\s]*(\d+)/i);
-    if (usageMatch) {
-      totalUse = usageMatch[1].replace(/,/g, '');
-      addLog(`Found PSEG total use: ${totalUse} kWh`);
-    }
-
-    // PSEG charges - look for various charge patterns
-    const chargesMatch = fullText.match(/(?:Total\s*(?:amount|charges|due)|Amount\s*due)\s*[:\$\s]*([\d,]+\.\d{2})/i);
-    if (chargesMatch) {
-      electricSupplyCharges = chargesMatch[1].replace(/,/g, '');
-      addLog(`Found PSEG charges: $${electricSupplyCharges}`);
-    }
-
-    return { serviceAddress, accountNumber, totalUse, electricSupplyCharges };
   };
 
   // Extract data from a single PDF
   const extractFromPDF = async (file) => {
     const { fullText, pages, numPages } = await extractTextFromPDF(file);
 
-    // Debug: show sample of extracted text
-    addLog(`Full text preview (first 800 chars): ${fullText.substring(0, 800).replace(/\s+/g, ' ')}...`);
-
     let result = {
       serviceAddress: null,
       accountNumber: null,
-      totalUse: null,
+      gasSupplyCharges: null,
       electricSupplyCharges: null
     };
+    let providerName = null;
 
-    // Determine which extraction method to use
-    let detectedMode = utilityMode;
+    // Determine which provider to use
+    let targetProviderId = null;
 
     if (utilityMode === 'auto') {
-      // Auto-detect based on content (using word boundaries to avoid false matches)
-      const aceMatch = fullText.match(/\bACE\b|Atlantic\s*City\s*Electric/i);
-      const psegMatch = fullText.match(/\bPSEG\b|Public\s*Service\s*Electric/i);
+      // Auto-detect provider
+      targetProviderId = detectProvider(fullText, addLog);
+    } else {
+      // Use explicitly selected provider
+      targetProviderId = utilityMode;
+    }
 
-      if (psegMatch) {
-        detectedMode = 'pseg';
-        addLog(`Auto-detected: PSEG utility bill (found: "${psegMatch[0]}")`);
-      } else if (aceMatch) {
-        detectedMode = 'ace';
-        addLog(`Auto-detected: ACE utility bill (found: "${aceMatch[0]}")`);
-      } else {
-        addLog('Could not auto-detect utility type, trying both...');
-        detectedMode = 'both';
+    // Try extraction with the target provider first (if detected/selected)
+    if (targetProviderId && PROVIDERS[targetProviderId]) {
+      const provider = PROVIDERS[targetProviderId];
+      const extractedData = provider.extractData(fullText, pages, addLog, normalizeAddress);
+
+      if (extractedData.accountNumber || extractedData.serviceAddress) {
+        result = extractedData;
+        providerName = provider.name;
       }
     }
 
-    // Try extraction based on detected mode
-    let extractionAttempted = false;
+    // If no data extracted yet, try all other providers as fallback
+    if (!result.accountNumber && !result.serviceAddress) {
+      for (const [providerId, provider] of Object.entries(PROVIDERS)) {
+        // Skip the one we already tried
+        if (providerId === targetProviderId) continue;
 
-    // Try ACE extraction
-    if (detectedMode === 'ace' || detectedMode === 'both') {
-      extractionAttempted = true;
-      const aceData = extractACEData(fullText, pages);
-      if (aceData.accountNumber || aceData.serviceAddress) {
-        result = aceData;
-        addLog('✓ ACE extraction successful');
-      } else {
-        addLog('✗ ACE extraction found no data');
-      }
-    }
-
-    // Try PSEG extraction if:
-    // 1. PSEG mode explicitly set, OR
-    // 2. Both mode (auto-detect failed), OR
-    // 3. Auto mode AND ACE extraction failed
-    if (
-      detectedMode === 'pseg' ||
-      detectedMode === 'both' ||
-      (utilityMode === 'auto' && extractionAttempted && !result.accountNumber)
-    ) {
-      const psegData = extractPSEGData(fullText, pages);
-      if (psegData.accountNumber || psegData.serviceAddress) {
-        result = psegData;
-        addLog('✓ PSEG extraction successful');
-      } else {
-        addLog('✗ PSEG extraction found no data');
+        const extractedData = provider.extractData(fullText, pages, addLog, normalizeAddress);
+        if (extractedData.accountNumber || extractedData.serviceAddress) {
+          result = extractedData;
+          providerName = provider.name;
+          break;
+        }
       }
     }
 
     return {
-      'Service Address': result.serviceAddress,
+      'File Name': file.name,
+      'Provider': providerName,
       'Account Number': result.accountNumber,
-      'Total Use': result.totalUse,
-      'Total Electric Supply Charges': result.electricSupplyCharges,
-      'File Name': file.name
+      'Service Address': result.serviceAddress,
+      'Total Gas Supply Charges': result.gasSupplyCharges,
+      'Total Electric Supply Charges': result.electricSupplyCharges
     };
   };
 
@@ -307,6 +147,14 @@ const PDFUtilityParser = () => {
   // Remove a file from the list
   const removeFile = (index) => {
     setFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Clear all files from the list
+  const clearAllFiles = () => {
+    setFiles([]);
+    setResults([]);
+    setErrors([]);
+    setProgress(0);
   };
 
   // Drag and drop handlers
@@ -344,8 +192,7 @@ const PDFUtilityParser = () => {
     setErrors([]);
     setDebugLogs([]);
 
-    addLog(`=== PDF Utility Parser ${APP_VERSION} ===`);
-    addLog(`=== Starting batch processing of ${files.length} file(s) ===`);
+    addLog(`Starting batch processing - ${files.length} file(s)`);
 
     const extractedData = [];
     const errorList = [];
@@ -354,13 +201,12 @@ const PDFUtilityParser = () => {
       const file = files[i];
       try {
         setCurrentFile(file.name);
-        addLog(`\n--- Processing file ${i + 1}/${files.length}: ${file.name} ---`);
+        addLog(`\n[${i + 1}/${files.length}] ${file.name}`);
         const data = await extractFromPDF(file);
         extractedData.push(data);
-        addLog(`✓ Successfully processed ${file.name}`);
         setProgress(Math.round(((i + 1) / files.length) * 100));
       } catch (error) {
-        addLog(`✗ ERROR processing ${file.name}: ${error.message}`);
+        addLog(`  ❌ ERROR: ${error.message}`);
         errorList.push({ fileName: file.name, error: error.message });
       }
     }
@@ -369,39 +215,67 @@ const PDFUtilityParser = () => {
     setErrors(errorList);
     setProcessing(false);
     setCurrentFile('');
-    addLog(`\n=== Processing complete! Extracted ${extractedData.length} files successfully ===`);
+    addLog(`\nComplete! Successfully processed ${extractedData.length}/${files.length} files`);
   };
 
-  // Export to Excel
-  const exportToExcel = () => {
-    if (results.length === 0) {
-      alert('No data to export');
-      return;
-    }
+  // Export handlers
+  const handleExportCombined = () => {
+    exportToExcel(results, {
+      sheetName: 'Combined Data',
+      fileName: 'utility_bill_combined.xlsx'
+    });
+  };
 
-    const worksheet = XLSX.utils.json_to_sheet(results);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'ACE Utility Data');
-    XLSX.writeFile(workbook, 'ace_extracted_data.xlsx');
+  const handleExportGas = () => {
+    exportGasOnly(results, {
+      sheetName: 'Gas Data',
+      fileName: 'utility_bill_gas.xlsx'
+    });
+  };
+
+  const handleExportElectric = () => {
+    exportElectricOnly(results, {
+      sheetName: 'Electric Data',
+      fileName: 'utility_bill_electric.xlsx'
+    });
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className={`min-h-screen p-8 transition-colors duration-200 ${
+      darkMode
+        ? 'bg-gradient-to-br from-gray-900 to-gray-800'
+        : 'bg-gradient-to-br from-blue-50 to-indigo-100'
+    }`}>
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-lg shadow-xl p-8">
+        <div className={`rounded-lg shadow-xl p-8 transition-colors duration-200 ${
+          darkMode ? 'bg-gray-800' : 'bg-white'
+        }`}>
           {/* Header */}
           <div className="mb-8">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-4xl font-bold text-gray-800 mb-2">
+                <h1 className={`text-4xl font-bold mb-2 ${
+                  darkMode ? 'text-white' : 'text-gray-800'
+                }`}>
                   Utility Bill PDF Parser
                 </h1>
-                <p className="text-gray-600">
+                <p className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
                   Extract account data from ACE and PSEG utility bills and export to Excel
                 </p>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">
+              <div className="text-right flex items-center gap-4">
+                <button
+                  onClick={toggleDarkMode}
+                  className={`p-2 rounded-lg transition-colors ${
+                    darkMode
+                      ? 'bg-gray-700 hover:bg-gray-600 text-yellow-300'
+                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
+                  title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+                >
+                  {darkMode ? '☀️' : '🌙'}
+                </button>
+                <div className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   {APP_VERSION}
                 </div>
               </div>
@@ -410,7 +284,9 @@ const PDFUtilityParser = () => {
 
           {/* Utility Mode Selector */}
           <div className="mb-8">
-            <label className="block mb-2 text-sm font-medium text-gray-700">
+            <label className={`block mb-2 text-sm font-medium ${
+              darkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}>
               Utility Company
             </label>
             <div className="flex gap-4">
@@ -422,7 +298,7 @@ const PDFUtilityParser = () => {
                   onChange={(e) => setUtilityMode(e.target.value)}
                   className="mr-2"
                 />
-                <span className="text-sm">Auto-detect</span>
+                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>Auto-detect</span>
               </label>
               <label className="flex items-center">
                 <input
@@ -432,7 +308,7 @@ const PDFUtilityParser = () => {
                   onChange={(e) => setUtilityMode(e.target.value)}
                   className="mr-2"
                 />
-                <span className="text-sm">ACE</span>
+                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>ACE</span>
               </label>
               <label className="flex items-center">
                 <input
@@ -442,24 +318,28 @@ const PDFUtilityParser = () => {
                   onChange={(e) => setUtilityMode(e.target.value)}
                   className="mr-2"
                 />
-                <span className="text-sm">PSEG</span>
+                <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>PSEG</span>
               </label>
             </div>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               Auto-detect will identify the utility type automatically
             </p>
           </div>
 
           {/* Upload Area with Drag & Drop */}
           <div className="mb-8">
-            <label className="block mb-2 text-sm font-medium text-gray-700">
+            <label className={`block mb-2 text-sm font-medium ${
+              darkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}>
               Select PDF Files
             </label>
             <div
               className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
                 dragActive
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : darkMode
+                    ? 'border-gray-600 bg-gray-700 hover:border-gray-500'
+                    : 'border-gray-300 bg-gray-50 hover:border-gray-400'
               }`}
               onDragEnter={handleDrag}
               onDragLeave={handleDrag}
@@ -475,7 +355,7 @@ const PDFUtilityParser = () => {
               />
               <div className="pointer-events-none">
                 <svg
-                  className="mx-auto h-12 w-12 text-gray-400"
+                  className={`mx-auto h-12 w-12 ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}
                   stroke="currentColor"
                   fill="none"
                   viewBox="0 0 48 48"
@@ -487,24 +367,41 @@ const PDFUtilityParser = () => {
                     strokeLinejoin="round"
                   />
                 </svg>
-                <p className="mt-2 text-sm text-gray-600">
+                <p className={`mt-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                   <span className="font-semibold">Click to upload</span> or drag and drop
                 </p>
-                <p className="text-xs text-gray-500">PDF files only</p>
+                <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>PDF files only</p>
               </div>
             </div>
 
             {/* File List */}
             {files.length > 0 && (
               <div className="mt-4 space-y-2">
-                <p className="text-sm font-medium text-gray-700">
-                  Selected files ({files.length}):
-                </p>
+                <div className="flex items-center justify-between">
+                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                    Selected files ({files.length}):
+                  </p>
+                  <button
+                    onClick={clearAllFiles}
+                    className={`text-sm font-medium ${
+                      darkMode
+                        ? 'text-red-400 hover:text-red-300'
+                        : 'text-red-600 hover:text-red-800'
+                    }`}
+                    title="Clear all files"
+                  >
+                    Clear All
+                  </button>
+                </div>
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {files.map((file, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-3 hover:bg-gray-50"
+                      className={`flex items-center justify-between border rounded-lg p-3 transition-colors ${
+                        darkMode
+                          ? 'bg-gray-700 border-gray-600 hover:bg-gray-650'
+                          : 'bg-white border-gray-200 hover:bg-gray-50'
+                      }`}
                     >
                       <div className="flex items-center space-x-3 flex-1 min-w-0">
                         <svg
@@ -519,17 +416,23 @@ const PDFUtilityParser = () => {
                           />
                         </svg>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">
+                          <p className={`text-sm font-medium truncate ${
+                            darkMode ? 'text-gray-100' : 'text-gray-900'
+                          }`}>
                             {file.name}
                           </p>
-                          <p className="text-xs text-gray-500">
+                          <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {(file.size / 1024).toFixed(1)} KB
                           </p>
                         </div>
                       </div>
                       <button
                         onClick={() => removeFile(index)}
-                        className="ml-4 text-red-600 hover:text-red-800 flex-shrink-0"
+                        className={`ml-4 flex-shrink-0 ${
+                          darkMode
+                            ? 'text-red-400 hover:text-red-300'
+                            : 'text-red-600 hover:text-red-800'
+                        }`}
                         title="Remove file"
                       >
                         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
@@ -561,17 +464,17 @@ const PDFUtilityParser = () => {
           {/* Progress Bar */}
           {processing && (
             <div className="mb-8">
-              <div className="w-full bg-gray-200 rounded-full h-4">
+              <div className={`w-full rounded-full h-4 ${darkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
                 <div
                   className="bg-blue-600 h-4 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
-              <p className="text-center mt-2 text-sm text-gray-600">
+              <p className={`text-center mt-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                 {progress}% Complete
               </p>
               {currentFile && (
-                <p className="text-center mt-1 text-xs text-gray-500">
+                <p className={`text-center mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   Processing: {currentFile}
                 </p>
               )}
@@ -580,12 +483,20 @@ const PDFUtilityParser = () => {
 
           {/* Error Messages */}
           {errors.length > 0 && (
-            <div className="mb-8 bg-red-50 border border-red-200 rounded-lg p-4">
-              <h3 className="text-red-800 font-semibold mb-2">
+            <div className={`mb-8 border rounded-lg p-4 ${
+              darkMode
+                ? 'bg-red-900/20 border-red-800'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <h3 className={`font-semibold mb-2 ${
+                darkMode ? 'text-red-400' : 'text-red-800'
+              }`}>
                 Errors ({errors.length})
               </h3>
               {errors.map((err, idx) => (
-                <div key={idx} className="text-sm text-red-700">
+                <div key={idx} className={`text-sm ${
+                  darkMode ? 'text-red-300' : 'text-red-700'
+                }`}>
                   ❌ {err.fileName}: {err.error}
                 </div>
               ))}
@@ -594,18 +505,24 @@ const PDFUtilityParser = () => {
 
           {/* Debug Logs - Collapsible */}
           {debugLogs.length > 0 && (
-            <div className="mb-8 bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+            <div className={`mb-8 border rounded-lg overflow-hidden ${
+              darkMode
+                ? 'bg-gray-700 border-gray-600'
+                : 'bg-gray-50 border-gray-300'
+            }`}>
               <button
                 onClick={() => setShowDebugLogs(!showDebugLogs)}
-                className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-100 transition-colors"
+                className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors ${
+                  darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-100'
+                }`}
               >
-                <h3 className="text-gray-800 font-semibold">
+                <h3 className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Processing Log ({debugLogs.length} entries)
                 </h3>
                 <svg
-                  className={`h-5 w-5 text-gray-600 transition-transform ${
+                  className={`h-5 w-5 transition-transform ${
                     showDebugLogs ? 'transform rotate-180' : ''
-                  }`}
+                  } ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -633,55 +550,124 @@ const PDFUtilityParser = () => {
           {/* Results Table */}
           {results.length > 0 && (
             <div className="mb-8">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-semibold text-gray-800">
+              <div className="flex justify-between items-center mb-4 gap-4">
+                <h2 className={`text-2xl font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Extracted Data ({results.length} files)
                 </h2>
-                <button
-                  onClick={exportToExcel}
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200"
-                >
-                  📥 Export to Excel
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportCombined}
+                    className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
+                    title="Export all data (gas + electric)"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Combined
+                  </button>
+                  <button
+                    onClick={handleExportGas}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
+                    title="Export gas data only"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+                    </svg>
+                    Gas
+                  </button>
+                  <button
+                    onClick={handleExportElectric}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
+                    title="Export electric data only"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    Electric
+                  </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full bg-white border border-gray-300 rounded-lg">
-                  <thead className="bg-gray-100">
+                <table className={`min-w-full border rounded-lg ${
+                  darkMode
+                    ? 'bg-gray-700 border-gray-600'
+                    : 'bg-white border-gray-300'
+                }`}>
+                  <thead className={darkMode ? 'bg-gray-600' : 'bg-gray-100'}>
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
                         File Name
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
+                        Provider
+                      </th>
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
                         Account Number
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
                         Service Address
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
-                        Total Use
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
+                        Total Gas Supply Charges
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b">
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
                         Total Electric Supply Charges
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-200">
+                  <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
                     {results.map((row, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900">
+                      <tr key={idx} className={darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-50'}>
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['File Name']}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {row['Account Number'] || '-'}
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Provider'] || 'Not Found'}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {row['Service Address'] || '-'}
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Account Number'] || 'Not Found'}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {row['Total Use'] || '-'}
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Service Address'] || 'Not Found'}
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          {row['Total Electric Supply Charges'] ? `$${row['Total Electric Supply Charges']}` : '-'}
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Total Gas Supply Charges']
+                            ? (isNaN(row['Total Gas Supply Charges'])
+                                ? row['Total Gas Supply Charges']
+                                : `$${row['Total Gas Supply Charges']}`)
+                            : 'Not Found'}
+                        </td>
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Total Electric Supply Charges']
+                            ? (isNaN(row['Total Electric Supply Charges'])
+                                ? row['Total Electric Supply Charges']
+                                : `$${row['Total Electric Supply Charges']}`)
+                            : 'Not Found'}
                         </td>
                       </tr>
                     ))}
