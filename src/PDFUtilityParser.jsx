@@ -8,7 +8,7 @@ import { exportToExcel, exportGasOnly, exportElectricOnly } from './utils/excelE
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.6.2';
+  const APP_VERSION = 'v1.7.0';
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -124,6 +124,7 @@ const PDFUtilityParser = () => {
       'Provider': providerName,
       'Account Number': result.accountNumber,
       'Service Address': result.serviceAddress,
+      'Total Usage (kWh)': result.totalUsageKwh,
       'Total Gas Supply Charges': result.gasSupplyCharges,
       'Total Electric Supply Charges': result.electricSupplyCharges
     };
@@ -629,6 +630,13 @@ const PDFUtilityParser = () => {
                           ? 'text-gray-200 border-gray-500'
                           : 'text-gray-700 border-gray-300'
                       }`}>
+                        Total Usage (kWh)
+                      </th>
+                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
                         Total Gas Supply Charges
                       </th>
                       <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
@@ -654,6 +662,11 @@ const PDFUtilityParser = () => {
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['Service Address'] || 'Not Found'}
+                        </td>
+                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {row['Total Usage (kWh)']
+                            ? `${row['Total Usage (kWh)']} kWh`
+                            : 'Not Found'}
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['Total Gas Supply Charges']

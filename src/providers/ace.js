@@ -11,6 +11,7 @@ export const aceProvider = {
     let accountNumber = null;
     let gasSupplyCharges = "ACE Doesn't Supply Gas";  // ACE is electric-only
     let electricSupplyCharges = null;
+    let totalUsageKwh = null;
 
     // Extract service address and account number from first page
     if (pages.length > 0) {
@@ -46,10 +47,26 @@ export const aceProvider = {
       }
     }
 
+    // Extract total kWh usage - try multiple patterns
+    const kwhPatterns = [
+      /Total\s+Use\s+(\d+)/i,  // "Total Use 6710"
+      /Use\s*\(kWh\)[\s\S]*?Total\s+Use\s+(\d+)/i,  // From usage table
+      /(\d+)\s+kWh/i  // Generic kWh pattern
+    ];
+
+    for (const pattern of kwhPatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        totalUsageKwh = match[1];
+        break;
+      }
+    }
+
     // Log results
     addLog(`  Account: ${accountNumber || 'N/A'}, Address: ${serviceAddress || 'N/A'}`);
     addLog(`  Electric: $${electricSupplyCharges || 'N/A'}, Gas: ${gasSupplyCharges}`);
+    addLog(`  Total Usage: ${totalUsageKwh || 'N/A'} kWh`);
 
-    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges };
+    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges, totalUsageKwh };
   }
 };
