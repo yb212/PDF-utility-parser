@@ -27,12 +27,12 @@ Excel file generation and export utilities.
   - Empty/null values are replaced with "Not Found"
 
 - `exportGasOnly(results, options)` - Export only gas-related data
-  - Exports: File Name, Provider, Account Number, Service Address, Total Gas Supply Charges
+  - Exports: File Name, Provider, Account Number, Service Address, Total Usage (kWh), Total Gas Supply Charges
   - Default filename: 'utility_bill_gas.xlsx'
   - Empty/null values are replaced with "Not Found"
 
 - `exportElectricOnly(results, options)` - Export only electric-related data
-  - Exports: File Name, Provider, Account Number, Service Address, Total Electric Supply Charges
+  - Exports: File Name, Provider, Account Number, Service Address, Total Usage (kWh), Total Electric Supply Charges
   - Default filename: 'utility_bill_electric.xlsx'
   - Empty/null values are replaced with "Not Found"
 

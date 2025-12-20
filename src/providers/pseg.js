@@ -11,6 +11,7 @@ export const psegProvider = {
     let accountNumber = null;
     let gasSupplyCharges = null;
     let electricSupplyCharges = null;
+    let totalUsageKwh = null;
 
     // Extract service address and account number from first page
     if (pages.length > 0) {
@@ -54,9 +55,26 @@ export const psegProvider = {
       }
     }
 
+    // Extract total kWh usage - try multiple patterns
+    const kwhPatterns = [
+      /Total\s+(?:electric\s+)?(?:you\s+)?used\s+(?:in\s+\d+\s+days\s+)?([\d,]+)\s+kWh/i,  // "Total electric you used in 29 days 2,972 kWh"
+      /Total\s+kWh\s+([\d,]+)/i,  // "Total kWh 79,516"
+      /Total\s+(?:energy\s+)?used[:\s]+([\d,]+)\s+kWh/i,  // "Total energy used 2,520 kWh"
+      /Total\s+kWh[:\s]+([\d,]+)/i  // Generic "Total kWh: 79516"
+    ];
+
+    for (const pattern of kwhPatterns) {
+      const match = fullText.match(pattern);
+      if (match) {
+        totalUsageKwh = match[1].replace(/,/g, '');
+        break;
+      }
+    }
+
     addLog(`  Account: ${accountNumber || 'N/A'}, Address: ${serviceAddress || 'N/A'}`);
     addLog(`  Electric: $${electricSupplyCharges || 'N/A'}, Gas: $${gasSupplyCharges || 'N/A'}`);
+    addLog(`  Total Usage: ${totalUsageKwh || 'N/A'} kWh`);
 
-    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges };
+    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges, totalUsageKwh };
   }
 };
