@@ -29,12 +29,13 @@ export const myutilityProvider = {
   //   - addLog: function to add debug log messages
   //   - normalizeAddress: function to clean/format addresses
   // Returns:
-  //   { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges }
+  //   { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges, totalUsageKwh }
   extractData: (fullText, pages, addLog, normalizeAddress) => {
     let serviceAddress = null;
     let accountNumber = null;
     let gasSupplyCharges = null;
     let electricSupplyCharges = null;
+    let totalUsageKwh = null;
 
     // Extract data using regex patterns specific to this provider
     if (pages.length > 0) {
@@ -64,11 +65,18 @@ export const myutilityProvider = {
       electricSupplyCharges = electricMatch[1].replace(/,/g, '');
     }
 
+    // Example: Extract kWh usage
+    const kwhMatch = fullText.match(/Total\s*kWh\s*([\d,]+)/i);
+    if (kwhMatch) {
+      totalUsageKwh = kwhMatch[1].replace(/,/g, '');
+    }
+
     // Log extraction results for debugging
     addLog(`  Account: ${accountNumber || 'N/A'}, Address: ${serviceAddress || 'N/A'}`);
     addLog(`  Electric: $${electricSupplyCharges || 'N/A'}, Gas: $${gasSupplyCharges || 'N/A'}`);
+    addLog(`  Total Usage: ${totalUsageKwh || 'N/A'} kWh`);
 
-    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges };
+    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges, totalUsageKwh };
   }
 };
 ```
@@ -101,10 +109,12 @@ export const PROVIDERS = {
 - **ace.js** - Atlantic City Electric
   - Handles third-party electric suppliers (e.g., XOOM Energy)
   - Gas: Always returns "ACE Doesn't Supply Gas" (electric-only provider)
+  - Extracts: Account number, service address, electric supply charges, total kWh usage
 
 - **pseg.js** - Public Service Electric & Gas
   - Handles both PSE&G standard supply and third-party suppliers (e.g., AEP Energy via CHOICE program)
   - Supports both gas and electric services
+  - Extracts: Account number, service address, gas supply charges, electric supply charges, total kWh usage
 
 ## Tips
 

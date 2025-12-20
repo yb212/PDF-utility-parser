@@ -111,6 +111,7 @@ export const exportGasOnly = (results, options = {}) => {
     'Provider': row['Provider'],
     'Account Number': row['Account Number'],
     'Service Address': row['Service Address'],
+    'Total Usage (kWh)': row['Total Usage (kWh)'],
     'Total Gas Supply Charges': row['Total Gas Supply Charges']
   }));
 
@@ -145,6 +146,7 @@ export const exportElectricOnly = (results, options = {}) => {
     'Provider': row['Provider'],
     'Account Number': row['Account Number'],
     'Service Address': row['Service Address'],
+    'Total Usage (kWh)': row['Total Usage (kWh)'],
     'Total Electric Supply Charges': row['Total Electric Supply Charges']
   }));
 
