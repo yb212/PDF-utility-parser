@@ -1,2 +1,39 @@
-
+[
+  {
+    "File Name": "pseg_test_1.pdf",
+    "Provider": "PSE&G",
+    "Account Number": "7255347002",
+    "Service Address": "247 Central Ave Jersey City NJ 07307-3009",
+    "Total Usage (kWh)": "2520",
+    "Total Gas Supply Charges": "48.17",
+    "Total Electric Supply Charges": "221.75"
+  },
+  {
+    "File Name": "pseg_test_8.pdf",
+    "Provider": "PSE&G",
+    "Account Number": "4209950602",
+    "Service Address": "2011 8 Th St Rear North Bergen Twp NJ 07047",
+    "Total Usage (kWh)": "79516",
+    "Total Gas Supply Charges": null,
+    "Total Electric Supply Charges": "6882.85"
+  },
+  {
+    "File Name": "ace_test_3.pdf",
+    "Provider": "ACE",
+    "Account Number": "55002359838",
+    "Service Address": "1238 Atlantic Ave Atlantic City NJ 08401",
+    "Total Usage (kWh)": "99",
+    "Total Gas Supply Charges": "ACE Doesn't Supply Gas",
+    "Total Electric Supply Charges": "748.17"
+  },
+  {
+    "File Name": "ace_test_10.pdf",
+    "Provider": "ACE",
+    "Account Number": "55004491894",
+    "Service Address": "3121 Fire Rd # 6 Egg Harbor Township NJ 08234",
+    "Total Usage (kWh)": "31680",
+    "Total Gas Supply Charges": "ACE Doesn't Supply Gas",
+    "Total Electric Supply Charges": null
+  }
+]
 

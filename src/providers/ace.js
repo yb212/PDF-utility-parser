@@ -49,15 +49,17 @@ export const aceProvider = {
 
     // Extract total kWh usage - try multiple patterns
     const kwhPatterns = [
-      /Total\s+Use\s+(\d+)/i,  // "Total Use 6710"
-      /Use\s*\(kWh\)[\s\S]*?Total\s+Use\s+(\d+)/i,  // From usage table
-      /(\d+)\s+kWh/i  // Generic kWh pattern
+      /(actual|estimated)[\s\S]{0,100}?(actual|estimated)[\s\S]{0,50}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,})/i,  // Two (actual/estimated) markers, then: difference, multiplier, total use
+      /Difference\s+Multiplier\s+Total\s+Use[\s\S]{0,200}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,})/i,  // Table headers followed by: difference, multiplier, total
+      /Use\s*\(kWh\)[\s\S]{0,300}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,5})(?=\s|\n|$)/i  // After Use(kWh), find sequence: small number (diff), medium number (mult), large number (total)
     ];
 
     for (const pattern of kwhPatterns) {
       const match = fullText.match(pattern);
       if (match) {
-        totalUsageKwh = match[1];
+        // Use the last captured group (total use value)
+        totalUsageKwh = match[match.length - 1];
+        addLog(`  Matched kWh pattern, extracted: ${totalUsageKwh}`);
         break;
       }
     }
