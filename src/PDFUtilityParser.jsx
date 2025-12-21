@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { PROVIDERS, detectProvider } from './providers';
 import { normalizeAddress } from './utils/addressUtils';
@@ -8,7 +8,8 @@ import { exportToExcel, exportGasOnly, exportElectricOnly } from './utils/excelE
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.7.0';
+  const APP_VERSION = 'v1.9.0';
+  const exportMenuRef = useRef(null);
 
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -20,6 +21,10 @@ const PDFUtilityParser = () => {
   const [utilityMode, setUtilityMode] = useState('auto'); // 'auto', 'ace', 'pseg'
   const [dragActive, setDragActive] = useState(false);
   const [showDebugLogs, setShowDebugLogs] = useState(false);
+  const [showFileList, setShowFileList] = useState(true);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   const [darkMode, setDarkMode] = useState(() => {
     // Check localStorage or system preference
     const saved = localStorage.getItem('darkMode');
@@ -36,12 +41,32 @@ const PDFUtilityParser = () => {
     });
   };
 
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
+
   // Add debug log helper
   const addLog = (message) => {
     const timestamp = new Date().toLocaleTimeString();
     setDebugLogs(prev => [...prev, `[${timestamp}] ${message}`]);
     console.log(message);
   };
+
+  // Close export menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
+      }
+    };
+
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showExportMenu]);
 
   // Extract text from PDF using PDF.js
   const extractTextFromPDF = async (file) => {
@@ -183,7 +208,7 @@ const PDFUtilityParser = () => {
   // Process all PDFs
   const processPDFs = async () => {
     if (files.length === 0) {
-      alert('Please select PDF files first');
+      showToast('Please select PDF files first', 'error');
       return;
     }
 
@@ -217,6 +242,23 @@ const PDFUtilityParser = () => {
     setProcessing(false);
     setCurrentFile('');
     addLog(`\nComplete! Successfully processed ${extractedData.length}/${files.length} files`);
+    showToast(`Successfully processed ${extractedData.length} of ${files.length} files`);
+  };
+
+  // Clear all results and start over
+  const clearResults = () => {
+    setResults([]);
+    setErrors([]);
+    setDebugLogs([]);
+    setFiles([]);
+    setProgress(0);
+    showToast('Results cleared');
+  };
+
+  // Remove individual result
+  const removeResult = (index) => {
+    setResults(prev => prev.filter((_, i) => i !== index));
+    showToast('Result removed');
   };
 
   // Export handlers
@@ -225,6 +267,8 @@ const PDFUtilityParser = () => {
       sheetName: 'Combined Data',
       fileName: 'utility_bill_combined.xlsx'
     });
+    setShowExportMenu(false);
+    showToast('Exported combined data to Excel');
   };
 
   const handleExportGas = () => {
@@ -232,6 +276,8 @@ const PDFUtilityParser = () => {
       sheetName: 'Gas Data',
       fileName: 'utility_bill_gas.xlsx'
     });
+    setShowExportMenu(false);
+    showToast('Exported gas data to Excel');
   };
 
   const handleExportElectric = () => {
@@ -239,6 +285,23 @@ const PDFUtilityParser = () => {
       sheetName: 'Electric Data',
       fileName: 'utility_bill_electric.xlsx'
     });
+    setShowExportMenu(false);
+    showToast('Exported electric data to Excel');
+  };
+
+  // Copy results to clipboard as JSON
+  const copyResultsToClipboard = async () => {
+    try {
+      const jsonString = JSON.stringify(results, null, 2);
+      await navigator.clipboard.writeText(jsonString);
+      setCopied(true);
+      addLog('Results copied to clipboard as JSON');
+      showToast('Copied results as JSON');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      addLog(`Failed to copy to clipboard: ${error.message}`);
+      showToast('Failed to copy to clipboard', 'error');
+    }
   };
 
   return (
@@ -247,6 +310,32 @@ const PDFUtilityParser = () => {
         ? 'bg-gradient-to-br from-gray-900 to-gray-800'
         : 'bg-gradient-to-br from-blue-50 to-indigo-100'
     }`}>
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-50 animate-slide-in-right">
+          <div className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 ${
+            toast.type === 'success'
+              ? darkMode
+                ? 'bg-green-700 text-green-100'
+                : 'bg-green-100 text-green-800 border border-green-200'
+              : darkMode
+                ? 'bg-red-700 text-red-100'
+                : 'bg-red-100 text-red-800 border border-red-200'
+          }`}>
+            {toast.type === 'success' ? (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <span className="font-medium">{toast.message}</span>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto">
         <div className={`rounded-lg shadow-xl p-8 transition-colors duration-200 ${
           darkMode ? 'bg-gray-800' : 'bg-white'
@@ -261,7 +350,7 @@ const PDFUtilityParser = () => {
                   Utility Bill PDF Parser
                 </h1>
                 <p className={darkMode ? 'text-gray-300' : 'text-gray-600'}>
-                  Extract account data from ACE and PSEG utility bills and export to Excel
+                  Parse utility bills and export to Excel
                 </p>
               </div>
               <div className="text-right flex items-center gap-4">
@@ -322,9 +411,6 @@ const PDFUtilityParser = () => {
                 <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-900'}`}>PSEG</span>
               </label>
             </div>
-            <p className={`mt-1 text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Auto-detect will identify the utility type automatically
-            </p>
           </div>
 
           {/* Upload Area with Drag & Drop */}
@@ -379,9 +465,22 @@ const PDFUtilityParser = () => {
             {files.length > 0 && (
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className={`text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Selected files ({files.length}):
-                  </p>
+                  <button
+                    onClick={() => setShowFileList(!showFileList)}
+                    className="flex items-center gap-2 text-sm font-medium hover:opacity-80"
+                  >
+                    <svg
+                      className={`h-4 w-4 transition-transform ${showFileList ? 'transform rotate-90' : ''} ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
+                      Selected files ({files.length})
+                    </span>
+                  </button>
                   <button
                     onClick={clearAllFiles}
                     className={`text-sm font-medium ${
@@ -394,7 +493,8 @@ const PDFUtilityParser = () => {
                     Clear All
                   </button>
                 </div>
-                <div className="space-y-2 max-h-60 overflow-y-auto">
+                {showFileList && (
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
                   {files.map((file, index) => (
                     <div
                       key={index}
@@ -446,7 +546,8 @@ const PDFUtilityParser = () => {
                       </button>
                     </div>
                   ))}
-                </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -504,89 +605,87 @@ const PDFUtilityParser = () => {
             </div>
           )}
 
-          {/* Debug Logs - Collapsible */}
-          {debugLogs.length > 0 && (
-            <div className={`mb-8 border rounded-lg overflow-hidden ${
-              darkMode
-                ? 'bg-gray-700 border-gray-600'
-                : 'bg-gray-50 border-gray-300'
-            }`}>
-              <button
-                onClick={() => setShowDebugLogs(!showDebugLogs)}
-                className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors ${
-                  darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-100'
-                }`}
-              >
-                <h3 className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  Processing Log ({debugLogs.length} entries)
-                </h3>
-                <svg
-                  className={`h-5 w-5 transition-transform ${
-                    showDebugLogs ? 'transform rotate-180' : ''
-                  } ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </button>
-              {showDebugLogs && (
-                <div className="px-4 pb-4">
-                  <div className="bg-black text-green-400 p-3 rounded font-mono text-xs max-h-96 overflow-y-auto">
-                    {debugLogs.map((log, idx) => (
-                      <div key={idx} className="whitespace-pre-wrap">{log}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Results Table */}
           {results.length > 0 && (
             <div className="mb-8">
+              {/* Summary Stats */}
+              <div className={`grid grid-cols-3 gap-4 mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="text-sm font-medium opacity-70">Total Files</div>
+                  <div className="text-2xl font-bold mt-1">{results.length}</div>
+                </div>
+                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="text-sm font-medium opacity-70">ACE Bills</div>
+                  <div className="text-2xl font-bold mt-1">{results.filter(r => r.Provider === 'ACE').length}</div>
+                </div>
+                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                  <div className="text-sm font-medium opacity-70">PSE&G Bills</div>
+                  <div className="text-2xl font-bold mt-1">{results.filter(r => r.Provider === 'PSE&G').length}</div>
+                </div>
+              </div>
+
               <div className="flex justify-between items-center mb-4 gap-4">
                 <h2 className={`text-2xl font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                  Extracted Data ({results.length} files)
+                  Extracted Data
                 </h2>
                 <div className="flex gap-2">
                   <button
-                    onClick={handleExportCombined}
-                    className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
-                    title="Export all data (gas + electric)"
+                    onClick={clearResults}
+                    className={`px-4 py-2 rounded-lg transition-colors font-medium ${
+                      darkMode
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-200'
+                        : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                    }`}
                   >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Combined
+                    Clear Results
                   </button>
-                  <button
-                    onClick={handleExportGas}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
-                    title="Export gas data only"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
-                    </svg>
-                    Gas
-                  </button>
-                  <button
-                    onClick={handleExportElectric}
-                    className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
-                    title="Export electric data only"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    Electric
-                  </button>
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-200 flex items-center gap-2"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Export
+                      <svg className={`h-4 w-4 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {showExportMenu && (
+                      <div className={`absolute right-0 mt-2 w-48 rounded-lg shadow-xl z-10 ${
+                        darkMode ? 'bg-gray-700 border border-gray-600' : 'bg-white border border-gray-200'
+                      }`}>
+                        <button
+                          onClick={handleExportCombined}
+                          className={`w-full text-left px-4 py-3 hover:bg-opacity-10 hover:bg-gray-500 flex items-center gap-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                          </svg>
+                          Combined Data
+                        </button>
+                        <button
+                          onClick={handleExportGas}
+                          className={`w-full text-left px-4 py-3 hover:bg-opacity-10 hover:bg-gray-500 flex items-center gap-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                          </svg>
+                          Gas Only
+                        </button>
+                        <button
+                          onClick={handleExportElectric}
+                          className={`w-full text-left px-4 py-3 hover:bg-opacity-10 hover:bg-gray-500 flex items-center gap-2 rounded-b-lg ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          Electric Only
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -646,47 +745,164 @@ const PDFUtilityParser = () => {
                       }`}>
                         Total Electric Supply Charges
                       </th>
+                      <th className={`px-4 py-3 text-center text-xs font-medium uppercase tracking-wider border-b ${
+                        darkMode
+                          ? 'text-gray-200 border-gray-500'
+                          : 'text-gray-700 border-gray-300'
+                      }`}>
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
                     {results.map((row, idx) => (
                       <tr key={idx} className={darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-50'}>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['File Name']}
+                          <div className="max-w-xs truncate" title={row['File Name']}>
+                            {row['File Name']}
+                          </div>
+                        </td>
+                        <td className={`px-4 py-3 text-sm`}>
+                          {row['Provider'] ? (
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              row['Provider'] === 'ACE'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                : row['Provider'] === 'PSE&G'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : darkMode
+                                    ? 'bg-gray-600 text-gray-200'
+                                    : 'bg-gray-200 text-gray-800'
+                            }`}>
+                              {row['Provider']}
+                            </span>
+                          ) : (
+                            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
+                          )}
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Provider'] || 'Not Found'}
+                          {row['Account Number'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Account Number'] || 'Not Found'}
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Service Address'] || 'Not Found'}
+                          <div className="max-w-sm truncate" title={row['Service Address']}>
+                            {row['Service Address'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                          </div>
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['Total Usage (kWh)']
                             ? `${row['Total Usage (kWh)']} kWh`
-                            : 'Not Found'}
+                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['Total Gas Supply Charges']
                             ? (isNaN(row['Total Gas Supply Charges'])
                                 ? row['Total Gas Supply Charges']
                                 : `$${row['Total Gas Supply Charges']}`)
-                            : 'Not Found'}
+                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
                         </td>
                         <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                           {row['Total Electric Supply Charges']
                             ? (isNaN(row['Total Electric Supply Charges'])
                                 ? row['Total Electric Supply Charges']
                                 : `$${row['Total Electric Supply Charges']}`)
-                            : 'Not Found'}
+                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => removeResult(idx)}
+                            className={`p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${
+                              darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
+                            }`}
+                            title="Remove this result"
+                          >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Processing Log - Collapsible */}
+          {debugLogs.length > 0 && (
+            <div className={`mb-8 border rounded-lg overflow-hidden ${
+              darkMode
+                ? 'bg-gray-700 border-gray-600'
+                : 'bg-gray-50 border-gray-300'
+            }`}>
+              <div
+                className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${
+                  darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-100'
+                }`}
+              >
+                <button
+                  onClick={() => setShowDebugLogs(!showDebugLogs)}
+                  className="flex items-center gap-3 flex-1 text-left"
+                >
+                  <h3 className={`font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                    Processing Log
+                  </h3>
+                  <svg
+                    className={`h-5 w-5 transition-transform ${
+                      showDebugLogs ? 'transform rotate-180' : ''
+                    } ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
+                {results.length > 0 && showDebugLogs && (
+                  <button
+                    onClick={copyResultsToClipboard}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded transition-colors ${
+                      copied
+                        ? darkMode
+                          ? 'bg-green-700 text-green-100'
+                          : 'bg-green-100 text-green-800'
+                        : darkMode
+                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                          : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                    title="Copy results to clipboard as JSON"
+                  >
+                    {copied ? (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span className="text-xs font-medium">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        <span className="text-xs font-medium">Copy JSON</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+              {showDebugLogs && (
+                <div className="px-4 pb-4">
+                  <div className="bg-black text-green-400 p-3 rounded font-mono text-xs max-h-96 overflow-y-auto">
+                    {debugLogs.map((log, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap">{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
