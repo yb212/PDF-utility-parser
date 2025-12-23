@@ -8,7 +8,7 @@ import { exportToExcel, exportGasOnly, exportElectricOnly } from './utils/excelE
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/PDF-utility-parser/pdf.worker.min.mjs';
 
 const PDFUtilityParser = () => {
-  const APP_VERSION = 'v1.9.0';
+  const APP_VERSION = 'v1.11.2';
   const exportMenuRef = useRef(null);
 
   const [files, setFiles] = useState([]);
@@ -144,15 +144,25 @@ const PDFUtilityParser = () => {
       }
     }
 
-    return {
+    // Build the data object with provider-specific fields
+    const dataObject = {
       'File Name': file.name,
       'Provider': providerName,
-      'Account Number': result.accountNumber,
       'Service Address': result.serviceAddress,
       'Total Usage (kWh)': result.totalUsageKwh,
       'Total Gas Supply Charges': result.gasSupplyCharges,
       'Total Electric Supply Charges': result.electricSupplyCharges
     };
+
+    // Add provider-specific ID fields
+    if (providerName === 'ACE') {
+      dataObject['ID Number'] = result.accountNumber;
+    } else if (providerName === 'PSE&G') {
+      dataObject['PE'] = result.electricPodId;
+      dataObject['PG'] = result.gasPodId;
+    }
+
+    return dataObject;
   };
 
   // Handle file selection
@@ -336,7 +346,7 @@ const PDFUtilityParser = () => {
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className={`rounded-lg shadow-xl p-8 transition-colors duration-200 ${
           darkMode ? 'bg-gray-800' : 'bg-white'
         }`}>
@@ -608,22 +618,6 @@ const PDFUtilityParser = () => {
           {/* Results Table */}
           {results.length > 0 && (
             <div className="mb-8">
-              {/* Summary Stats */}
-              <div className={`grid grid-cols-3 gap-4 mb-6 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="text-sm font-medium opacity-70">Total Files</div>
-                  <div className="text-2xl font-bold mt-1">{results.length}</div>
-                </div>
-                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="text-sm font-medium opacity-70">ACE Bills</div>
-                  <div className="text-2xl font-bold mt-1">{results.filter(r => r.Provider === 'ACE').length}</div>
-                </div>
-                <div className={`p-4 rounded-lg border ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
-                  <div className="text-sm font-medium opacity-70">PSE&G Bills</div>
-                  <div className="text-2xl font-bold mt-1">{results.filter(r => r.Provider === 'PSE&G').length}</div>
-                </div>
-              </div>
-
               <div className="flex justify-between items-center mb-4 gap-4">
                 <h2 className={`text-2xl font-semibold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
                   Extracted Data
@@ -688,142 +682,187 @@ const PDFUtilityParser = () => {
                   </div>
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className={`min-w-full border rounded-lg ${
-                  darkMode
-                    ? 'bg-gray-700 border-gray-600'
-                    : 'bg-white border-gray-300'
-                }`}>
-                  <thead className={darkMode ? 'bg-gray-600' : 'bg-gray-100'}>
-                    <tr>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
+              {/* Group results by provider and display separate tables */}
+              {(() => {
+                // Group results by provider
+                const resultsByProvider = {};
+                results.forEach((row, idx) => {
+                  const provider = row['Provider'] || 'Unknown';
+                  if (!resultsByProvider[provider]) {
+                    resultsByProvider[provider] = [];
+                  }
+                  resultsByProvider[provider].push({ ...row, originalIndex: idx });
+                });
+
+                return Object.keys(resultsByProvider).map(provider => (
+                  <div key={provider} className="mb-6">
+                    {/* Provider header */}
+                    <h3 className={`text-lg font-semibold mb-3 flex items-center gap-2 ${
+                      darkMode ? 'text-gray-100' : 'text-gray-800'
+                    }`}>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                        provider === 'ACE'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                          : provider === 'PSE&G'
+                            ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                            : darkMode
+                              ? 'bg-gray-600 text-gray-200'
+                              : 'bg-gray-200 text-gray-800'
                       }`}>
-                        File Name
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                        {provider}
+                      </span>
+                      <span className={`text-sm font-normal ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        ({resultsByProvider[provider].length} {resultsByProvider[provider].length === 1 ? 'bill' : 'bills'})
+                      </span>
+                    </h3>
+
+                    <div className="overflow-x-auto">
+                      <table className={`min-w-full border rounded-lg ${
                         darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
+                          ? 'bg-gray-700 border-gray-600'
+                          : 'bg-white border-gray-300'
                       }`}>
-                        Provider
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Account Number
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Service Address
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Total Usage (kWh)
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Total Gas Supply Charges
-                      </th>
-                      <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Total Electric Supply Charges
-                      </th>
-                      <th className={`px-4 py-3 text-center text-xs font-medium uppercase tracking-wider border-b ${
-                        darkMode
-                          ? 'text-gray-200 border-gray-500'
-                          : 'text-gray-700 border-gray-300'
-                      }`}>
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
-                    {results.map((row, idx) => (
-                      <tr key={idx} className={darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-50'}>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          <div className="max-w-xs truncate" title={row['File Name']}>
-                            {row['File Name']}
-                          </div>
-                        </td>
-                        <td className={`px-4 py-3 text-sm`}>
-                          {row['Provider'] ? (
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              row['Provider'] === 'ACE'
-                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                                : row['Provider'] === 'PSE&G'
-                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                                  : darkMode
-                                    ? 'bg-gray-600 text-gray-200'
-                                    : 'bg-gray-200 text-gray-800'
+                        <thead className={darkMode ? 'bg-gray-600' : 'bg-gray-100'}>
+                          <tr>
+                            <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
                             }`}>
-                              {row['Provider']}
-                            </span>
-                          ) : (
-                            <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>
-                          )}
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Account Number'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          <div className="max-w-sm truncate" title={row['Service Address']}>
-                            {row['Service Address'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
-                          </div>
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Total Usage (kWh)']
-                            ? `${row['Total Usage (kWh)']} kWh`
-                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Total Gas Supply Charges']
-                            ? (isNaN(row['Total Gas Supply Charges'])
-                                ? row['Total Gas Supply Charges']
-                                : `$${row['Total Gas Supply Charges']}`)
-                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
-                        </td>
-                        <td className={`px-4 py-3 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                          {row['Total Electric Supply Charges']
-                            ? (isNaN(row['Total Electric Supply Charges'])
-                                ? row['Total Electric Supply Charges']
-                                : `$${row['Total Electric Supply Charges']}`)
-                            : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => removeResult(idx)}
-                            className={`p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${
-                              darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
-                            }`}
-                            title="Remove this result"
-                          >
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                              File Name
+                            </th>
+                            {provider === 'ACE' && (
+                              <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                                darkMode
+                                  ? 'text-gray-200 border-gray-500'
+                                  : 'text-gray-700 border-gray-300'
+                              }`}>
+                                ID Number
+                              </th>
+                            )}
+                            {provider === 'PSE&G' && (
+                              <>
+                                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                                  darkMode
+                                    ? 'text-gray-200 border-gray-500'
+                                    : 'text-gray-700 border-gray-300'
+                                }`}>
+                                  PE
+                                </th>
+                                <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                                  darkMode
+                                    ? 'text-gray-200 border-gray-500'
+                                    : 'text-gray-700 border-gray-300'
+                                }`}>
+                                  PG
+                                </th>
+                              </>
+                            )}
+                            <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
+                            }`}>
+                              Service Address
+                            </th>
+                            <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
+                            }`}>
+                              Total Usage (kWh)
+                            </th>
+                            <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
+                            }`}>
+                              Total Gas Supply Charges
+                            </th>
+                            <th className={`px-4 py-3 text-left text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
+                            }`}>
+                              Total Electric Supply Charges
+                            </th>
+                            <th className={`px-4 py-3 text-center text-xs font-medium uppercase tracking-wider border-b ${
+                              darkMode
+                                ? 'text-gray-200 border-gray-500'
+                                : 'text-gray-700 border-gray-300'
+                            }`}>
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${darkMode ? 'divide-gray-600' : 'divide-gray-200'}`}>
+                          {resultsByProvider[provider].map((row) => (
+                            <tr key={row.originalIndex} className={darkMode ? 'hover:bg-gray-600' : 'hover:bg-gray-50'}>
+                              <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                <div className="max-w-sm truncate" title={row['File Name']}>
+                                  {row['File Name']}
+                                </div>
+                              </td>
+                              {provider === 'ACE' && (
+                                <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                  {row['ID Number'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                                </td>
+                              )}
+                              {provider === 'PSE&G' && (
+                                <>
+                                  <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                    {row['PE'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                                  </td>
+                                  <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                    {row['PG'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                                  </td>
+                                </>
+                              )}
+                              <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                <div className="max-w-md truncate" title={row['Service Address']}>
+                                  {row['Service Address'] || <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                                </div>
+                              </td>
+                              <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                {row['Total Usage (kWh)']
+                                  ? `${row['Total Usage (kWh)']} kWh`
+                                  : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                              </td>
+                              <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                {row['Total Gas Supply Charges']
+                                  ? (isNaN(row['Total Gas Supply Charges'])
+                                      ? row['Total Gas Supply Charges']
+                                      : `$${row['Total Gas Supply Charges']}`)
+                                  : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                              </td>
+                              <td className={`px-3 py-2 text-sm ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                                {row['Total Electric Supply Charges']
+                                  ? (isNaN(row['Total Electric Supply Charges'])
+                                      ? row['Total Electric Supply Charges']
+                                      : `$${row['Total Electric Supply Charges']}`)
+                                  : <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>—</span>}
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button
+                                  onClick={() => removeResult(row.originalIndex)}
+                                  className={`p-1.5 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors ${
+                                    darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-600 hover:text-red-700'
+                                  }`}
+                                  title="Remove this result"
+                                >
+                                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           )}
 

@@ -17,11 +17,9 @@ const replaceNullWithNotFound = (results) => {
 };
 
 /**
- * Export utility bill data to Excel file
+ * Export utility bill data with one tab per provider
  * @param {Array} results - Array of extracted bill data objects
  * @param {Object} options - Export options
- * @param {string} options.sheetName - Name of the worksheet (default: 'Utility Data')
- * @param {string} options.fileName - Output filename (default: 'utility_bill_data.xlsx')
  */
 export const exportToExcel = (results, options = {}) => {
   if (!results || results.length === 0) {
@@ -30,67 +28,70 @@ export const exportToExcel = (results, options = {}) => {
   }
 
   const {
-    sheetName = 'Utility Data',
     fileName = 'utility_bill_data.xlsx'
   } = options;
 
-  // Replace null values with "Not Found"
-  const cleanedResults = replaceNullWithNotFound(results);
-
-  // Create worksheet from JSON data
-  const worksheet = XLSX.utils.json_to_sheet(cleanedResults);
-
-  // Create workbook and add worksheet
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-
-  // Write file
-  XLSX.writeFile(workbook, fileName);
-};
-
-/**
- * Export utility bill data with custom formatting
- * @param {Array} results - Array of extracted bill data objects
- * @param {Object} options - Export options
- */
-export const exportToExcelWithFormatting = (results, options = {}) => {
-  if (!results || results.length === 0) {
-    alert('No data to export');
-    return;
-  }
-
-  const {
-    sheetName = 'Utility Data',
-    fileName = 'utility_bill_data.xlsx'
-  } = options;
-
-  // Create worksheet from JSON data
-  const worksheet = XLSX.utils.json_to_sheet(results);
-
-  // Auto-size columns based on content
-  const columnWidths = [];
-  const headers = Object.keys(results[0]);
-
-  headers.forEach((header, i) => {
-    const maxLength = Math.max(
-      header.length,
-      ...results.map(row => (row[header] ? String(row[header]).length : 0))
-    );
-    columnWidths[i] = { wch: Math.min(maxLength + 2, 50) }; // Cap at 50 chars
+  // Group results by provider
+  const resultsByProvider = {};
+  results.forEach(row => {
+    const provider = row['Provider'] || 'Unknown';
+    if (!resultsByProvider[provider]) {
+      resultsByProvider[provider] = [];
+    }
+    resultsByProvider[provider].push(row);
   });
 
-  worksheet['!cols'] = columnWidths;
-
-  // Create workbook and add worksheet
+  // Create workbook
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  // Create a worksheet for each provider
+  Object.keys(resultsByProvider).forEach(provider => {
+    const providerData = resultsByProvider[provider];
+
+    // Format data based on provider
+    let formattedData;
+    if (provider === 'ACE') {
+      // ACE: Include ID Number
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'ID Number': row['ID Number'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Gas Supply Charges': row['Total Gas Supply Charges'],
+        'Total Electric Supply Charges': row['Total Electric Supply Charges']
+      }));
+    } else if (provider === 'PSE&G') {
+      // PSEG: Include PE and PG columns
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'PE': row['PE'],
+        'PG': row['PG'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Gas Supply Charges': row['Total Gas Supply Charges'],
+        'Total Electric Supply Charges': row['Total Electric Supply Charges']
+      }));
+    } else {
+      // Unknown provider: Include all data as-is
+      formattedData = providerData;
+    }
+
+    // Replace null values with "Not Found"
+    const cleanedData = replaceNullWithNotFound(formattedData);
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+
+    // Add worksheet to workbook with provider name as tab name
+    XLSX.utils.book_append_sheet(workbook, worksheet, provider);
+  });
 
   // Write file
   XLSX.writeFile(workbook, fileName);
 };
 
 /**
- * Export only gas-related data
+ * Export only gas-related data with one tab per provider
  * @param {Array} results - Array of extracted bill data objects
  * @param {Object} options - Export options
  */
@@ -101,31 +102,65 @@ export const exportGasOnly = (results, options = {}) => {
   }
 
   const {
-    sheetName = 'Gas Data',
     fileName = 'utility_bill_gas_data.xlsx'
   } = options;
 
-  // Filter out electric column
-  const gasData = results.map(row => ({
-    'File Name': row['File Name'],
-    'Provider': row['Provider'],
-    'Account Number': row['Account Number'],
-    'Service Address': row['Service Address'],
-    'Total Usage (kWh)': row['Total Usage (kWh)'],
-    'Total Gas Supply Charges': row['Total Gas Supply Charges']
-  }));
+  // Group results by provider
+  const resultsByProvider = {};
+  results.forEach(row => {
+    const provider = row['Provider'] || 'Unknown';
+    if (!resultsByProvider[provider]) {
+      resultsByProvider[provider] = [];
+    }
+    resultsByProvider[provider].push(row);
+  });
 
-  // Replace null values with "Not Found"
-  const cleanedData = replaceNullWithNotFound(gasData);
-
-  const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+  // Create workbook
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  // Create a worksheet for each provider
+  Object.keys(resultsByProvider).forEach(provider => {
+    const providerData = resultsByProvider[provider];
+
+    // Format data based on provider (exclude electric charges)
+    let formattedData;
+    if (provider === 'ACE') {
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'ID Number': row['ID Number'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Gas Supply Charges': row['Total Gas Supply Charges']
+      }));
+    } else if (provider === 'PSE&G') {
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'PE': row['PE'],
+        'PG': row['PG'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Gas Supply Charges': row['Total Gas Supply Charges']
+      }));
+    } else {
+      formattedData = providerData;
+    }
+
+    // Replace null values with "Not Found"
+    const cleanedData = replaceNullWithNotFound(formattedData);
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, provider);
+  });
+
+  // Write file
   XLSX.writeFile(workbook, fileName);
 };
 
 /**
- * Export only electric-related data
+ * Export only electric-related data with one tab per provider
  * @param {Array} results - Array of extracted bill data objects
  * @param {Object} options - Export options
  */
@@ -136,25 +171,59 @@ export const exportElectricOnly = (results, options = {}) => {
   }
 
   const {
-    sheetName = 'Electric Data',
     fileName = 'utility_bill_electric_data.xlsx'
   } = options;
 
-  // Filter out gas column
-  const electricData = results.map(row => ({
-    'File Name': row['File Name'],
-    'Provider': row['Provider'],
-    'Account Number': row['Account Number'],
-    'Service Address': row['Service Address'],
-    'Total Usage (kWh)': row['Total Usage (kWh)'],
-    'Total Electric Supply Charges': row['Total Electric Supply Charges']
-  }));
+  // Group results by provider
+  const resultsByProvider = {};
+  results.forEach(row => {
+    const provider = row['Provider'] || 'Unknown';
+    if (!resultsByProvider[provider]) {
+      resultsByProvider[provider] = [];
+    }
+    resultsByProvider[provider].push(row);
+  });
 
-  // Replace null values with "Not Found"
-  const cleanedData = replaceNullWithNotFound(electricData);
-
-  const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+  // Create workbook
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  // Create a worksheet for each provider
+  Object.keys(resultsByProvider).forEach(provider => {
+    const providerData = resultsByProvider[provider];
+
+    // Format data based on provider (exclude gas charges)
+    let formattedData;
+    if (provider === 'ACE') {
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'ID Number': row['ID Number'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Electric Supply Charges': row['Total Electric Supply Charges']
+      }));
+    } else if (provider === 'PSE&G') {
+      formattedData = providerData.map(row => ({
+        'File Name': row['File Name'],
+        'PE': row['PE'],
+        'PG': row['PG'],
+        'Service Address': row['Service Address'],
+        'Total Usage (kWh)': row['Total Usage (kWh)'],
+        'Total Electric Supply Charges': row['Total Electric Supply Charges']
+      }));
+    } else {
+      formattedData = providerData;
+    }
+
+    // Replace null values with "Not Found"
+    const cleanedData = replaceNullWithNotFound(formattedData);
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(cleanedData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(workbook, worksheet, provider);
+  });
+
+  // Write file
   XLSX.writeFile(workbook, fileName);
 };

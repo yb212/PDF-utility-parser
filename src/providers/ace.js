@@ -48,10 +48,23 @@ export const aceProvider = {
     }
 
     // Extract total kWh usage - try multiple patterns
+    // ACE bills have meter readings spread across multiple lines:
+    // "Use (kWh)" → date → current reading (6 digits) → date → previous reading (6 digits) + difference + multiplier + total (all on one line)
     const kwhPatterns = [
-      /(actual|estimated)[\s\S]{0,100}?(actual|estimated)[\s\S]{0,50}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,})/i,  // Two (actual/estimated) markers, then: difference, multiplier, total use
-      /Difference\s+Multiplier\s+Total\s+Use[\s\S]{0,200}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,})/i,  // Table headers followed by: difference, multiplier, total
-      /Use\s*\(kWh\)[\s\S]{0,300}?(\d{2,4})\s+(\d{1,3})\s+(\d{4,5})(?=\s|\n|$)/i  // After Use(kWh), find sequence: small number (diff), medium number (mult), large number (total)
+      // Pattern 1: Multi-line pattern - "Use (kWh)" then anywhere find: 6-digit current, 6-digit previous, then diff + mult + total on same line
+      // Captures: current reading, previous reading, difference, multiplier, total use
+      /Use\s*\(kWh\)[\s\S]*?(\d{6})[\s\S]*?(\d{6})\s+(\d+)\s+(\d+)\s+(\d+)/i,
+
+      // Pattern 2: More flexible - find the table structure after "Difference Multiplier Total Use" headers
+      // Looks for the row with any multiplier value and captures the total
+      /Difference\s+Multiplier\s+Total\s+Use[\s\S]{0,200}?(\d+)\s+(\d+)\s+(\d+)/i,
+
+      // Pattern 3: Look for sequence of numbers with multiplier pattern (prev reading + 3 more numbers on same line)
+      // This matches the line: "059363 695 80 55600" (previous, diff, mult, total)
+      /(\d{6})\s+(\d+)\s+(\d+)\s+(\d+)/,
+
+      // Pattern 4: Fallback - simple "Total Use" followed by a number
+      /Total\s+Use\s+(\d+)/i
     ];
 
     for (const pattern of kwhPatterns) {
