@@ -8,20 +8,16 @@ export const psegProvider = {
 
   extractData: (fullText, pages, addLog, normalizeAddress) => {
     let serviceAddress = null;
-    let accountNumber = null;
+    let accountNumber = null; // Keep for ACE compatibility
+    let electricPodId = null; // PE PoD for PSEG
+    let gasPodId = null; // PG PoD for PSEG
     let gasSupplyCharges = null;
     let electricSupplyCharges = null;
     let totalUsageKwh = null;
 
-    // Extract service address and account number from first page
+    // Extract service address from first page
     if (pages.length > 0) {
       const page1Text = pages[0].text;
-
-      // Account number - capture all digits including spaces, then remove spaces
-      const accountMatch = page1Text.match(/Account\s*number\s*[:\s]*([\d\s]+)/i);
-      if (accountMatch) {
-        accountNumber = accountMatch[1].replace(/\s+/g, '');
-      }
 
       // Service address - extract full address including city, state, zip
       // Look for address pattern: street, city, state (2 letters), zip (5 or 5-4 digits)
@@ -32,6 +28,22 @@ export const psegProvider = {
         rawAddress = rawAddress.replace(/\s+/g, ' ').trim();
         serviceAddress = normalizeAddress(rawAddress);
       }
+    }
+
+    // PoD (Point of Delivery) numbers - search full text (PoD is on page 3 or 4)
+    // Format: "Your PoD ID is: PE000012054105751628" or "PG000012054105751628"
+    // Extract only the 18 digits (not the PE/PG prefix)
+
+    // Electric PoD (PE)
+    const electricPodMatch = fullText.match(/Your\s+PoD\s+ID\s+is:\s+PE(\d{18})/i);
+    if (electricPodMatch) {
+      electricPodId = electricPodMatch[1];
+    }
+
+    // Gas PoD (PG)
+    const gasPodMatch = fullText.match(/Your\s+PoD\s+ID\s+is:\s+PG(\d{18})/i);
+    if (gasPodMatch) {
+      gasPodId = gasPodMatch[1];
     }
 
     // Gas supply charges
@@ -71,10 +83,11 @@ export const psegProvider = {
       }
     }
 
-    addLog(`  Account: ${accountNumber || 'N/A'}, Address: ${serviceAddress || 'N/A'}`);
+    addLog(`  PE PoD: ${electricPodId || 'N/A'}, PG PoD: ${gasPodId || 'N/A'}`);
+    addLog(`  Address: ${serviceAddress || 'N/A'}`);
     addLog(`  Electric: $${electricSupplyCharges || 'N/A'}, Gas: $${gasSupplyCharges || 'N/A'}`);
     addLog(`  Total Usage: ${totalUsageKwh || 'N/A'} kWh`);
 
-    return { serviceAddress, accountNumber, gasSupplyCharges, electricSupplyCharges, totalUsageKwh };
+    return { serviceAddress, accountNumber, electricPodId, gasPodId, gasSupplyCharges, electricSupplyCharges, totalUsageKwh };
   }
 };
